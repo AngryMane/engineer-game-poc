@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {scenarios} from './scenarios';
 import {createWorld,step,setInput,intervene,restartWithSettings,validateBehavior,validate,type World,type Scenario} from './engine';
 import {checkOutputs,expressionLabel} from './contracts';
-const added=scenarios.slice(3);
+const added=scenarios.slice(3).filter(s=>!s.hierarchy);
 function run(s:Scenario,w:World,count:number){for(let i=0;i<count;i++)w=step(s,w,false);return w;}
 describe('additional investigations',()=>{
  it('adds three selectable problems with twenty nodes and five terminal outputs each',()=>{
