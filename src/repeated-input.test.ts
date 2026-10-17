@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {scenarios} from './scenarios';
+import {scenarios} from './legacyScenarios';
 import {createWorld,setInput,step} from './engine';
 it('keeps healthy repeated activation consistent with the declared response deadline',()=>{
  const s={...scenarios[2],faults:[]};let w=setInput(s,createWorld(s),'N01.enabled',1);

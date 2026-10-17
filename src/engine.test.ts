@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {createWorld,step,observe,intervene,setInput,requestNode,validate,validateBehavior,restartWithSettings,type Scenario,type World,type Expr} from './engine';
-import {scenarios} from './scenarios';
+import {scenarios} from './legacyScenarios';
 const active=(s:Scenario,w=createWorld(s))=>s.inputs.some(i=>i.id==='N01.enabled')?setInput(s,w,'N01.enabled',1):w;
 const simulate=(s:Scenario,count:number,w=active(s))=>{const frames=[w];for(let i=0;i<count;i++){w=step(s,w);frames.push(w);}return frames;};
 const final=(frames:World[])=>frames.at(-1)!;

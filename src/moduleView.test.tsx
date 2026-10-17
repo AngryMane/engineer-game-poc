@@ -1,8 +1,8 @@
 import {describe,it,expect} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {scenarios} from './scenarios';
+import {scenarios} from './legacyScenarios';
 import {moduleViewScenario} from './moduleView';
-import {App} from './App';
+import {HierarchyPlay} from './HierarchyPlay';
 import {createWorld,setInput,step,validate,intervene,validateBehavior} from './engine';
 import {scopeItems,descendants,projectConnections,validateHierarchyView,moduleById,readBoundary} from './hierarchy';
 import {HierarchyGraph} from './HierarchyGraph';
@@ -15,7 +15,7 @@ describe('unified system/module view',()=>{
   expect(()=>validate(s)).not.toThrow();expect(raw).toEqual(before);
   expect(descendants(s,'Core').sort()).toEqual(raw.nodes.filter(n=>n.kind==='inner').map(n=>n.id).sort());
   expect(scopeItems(s,null).modules).toEqual(['Core']);
-  const initial=renderToStaticMarkup(<App initialScenario={id}/>);for(const n of raw.nodes.filter(n=>n.kind==='inner'))expect(initial).not.toContain(n.id);
+  const initial=renderToStaticMarkup(<HierarchyPlay s={s} onScenario={()=>{}}/>);for(const n of raw.nodes.filter(n=>n.kind==='inner'))expect(initial).not.toContain(n.id);
   expect(scopeItems(s,null).nodes.sort()).toEqual(raw.nodes.filter(n=>n.kind!=='inner').map(n=>n.id).sort());
   let a=setInput(raw,createWorld(raw),raw.inputs[0].id,raw.inputs[0].max),b=setInput(s,createWorld(s),raw.inputs[0].id,raw.inputs[0].max);
   for(let i=0;i<24;i++){a=step(raw,a,false);b=step(s,b,false);projectConnections(s,b,i%2?'Core':null);expect(b).toEqual(a);}
@@ -23,7 +23,7 @@ describe('unified system/module view',()=>{
  it('reveals child specs only when their parent is expanded, without the separate Output spec section',()=>{
   const s=moduleViewScenario(scenarios.find(s=>s.id==='hierarchy')!),w=createWorld(s);
   const props={s,w,selected:null,onScope:()=>{},onSelect:()=>{},onInput:()=>{}};
-  const root=renderToStaticMarkup(<App initialScenario="hierarchy"/>);
+  const root=renderToStaticMarkup(<HierarchyPlay s={s} onScenario={()=>{}}/>);
   expect(root).toContain('data-module="Core"');expect(root).not.toContain('data-module="Transform"');
   expect(root).not.toContain(moduleById(s,'Shared').spec.expected);expect(root).not.toContain('output-requirements');
   const core=renderToStaticMarkup(<HierarchyGraph {...props} scope="Core"/>);

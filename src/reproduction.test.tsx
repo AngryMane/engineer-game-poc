@@ -39,7 +39,7 @@ describe('causal reproduction discovery',()=>{
  it('rejects reordered, invalid and out-of-range copied recipes',()=>{for(const events of [[action(3,capture,1),action(1,use,1)],[action(0,'missing',1)],[action(0,capture,2)],[action(99,use,1)]])expect(()=>replayExperiment(s,recipe(createWorld(s),events))).toThrow();});
  it('keeps modes/hierarchy observational and initial evidence incomplete',()=>{
   const a=presentScenario(s,'abstract'),b=presentScenario(s,'functional');const initial=createWorld(s),before=structuredClone(initial);for(const scope of [null,'Core','Control','Holding','Consumption']){scopeItems(a,scope);projectConnections(b,initial,scope);}expect(initial).toEqual(before);expect(replayExperiment(a,recipe())).toEqual(replayExperiment(b,recipe()));expect(validateBehavior(a,initial)).toEqual(validateBehavior(b,initial));
-  const html=renderToStaticMarkup(<HierarchyPlay s={s} onScenario={()=>{}}/>);expect(html).toContain('Report / partial records');expect(html).not.toContain('t=6');expect(html).not.toContain('N05');expect(html).not.toContain('Retention /');expect(html).toContain('Input events');expect(hierarchySample(a,initial)).toEqual(hierarchySample(b,initial));
+  const html=renderToStaticMarkup(<HierarchyPlay s={s} onScenario={()=>{}}/>);expect(html).toContain('Partial records');expect(html).not.toContain('t=6');expect(html).not.toContain('N05');expect(html).not.toContain('Retention /');expect(html).toContain('Input events');expect(hierarchySample(a,initial)).toEqual(hierarchySample(b,initial));
  });
 });
 

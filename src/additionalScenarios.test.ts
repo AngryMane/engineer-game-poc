@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {scenarios} from './scenarios';
+import {scenarios} from './legacyScenarios';
 import {createWorld,step,setInput,intervene,restartWithSettings,validateBehavior,validate,type World,type Scenario} from './engine';
 import {checkOutputs,expressionLabel} from './contracts';
 const added=scenarios.slice(3).filter(s=>!s.hierarchy);

@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {scenarios} from './scenarios';
+import {scenarios} from './legacyScenarios';
 import {createWorld,step,validateBehavior,setInput,intervene} from './engine';
 it('healthy output behavior passes public cases',()=>{for(const original of scenarios){const s={...original,faults:[]},w=createWorld(s),result=validateBehavior(s,w);expect(result,JSON.stringify(result)).toMatchObject({passed:true});}});
 it('keeps one onset while a late response persists, then logs recovery and removes the alert',()=>{

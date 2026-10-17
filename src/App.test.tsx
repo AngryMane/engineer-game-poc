@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {FlatApp as App} from './App';
-import {scenarios} from './scenarios';
+import {scenarios} from './legacyScenarios';
 import {Graph} from './Graph';
 import {Editor} from './Editor';
 import {NodeDetails} from './NodeDetails';

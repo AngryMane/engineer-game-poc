@@ -1,4 +1,5 @@
 import {validateHierarchy,type Hierarchy} from './hierarchy';
+import type {FaultReport} from './faultReports';
 import {updateMonitor,checkOutputs,validateContracts,type ContractRule,type BehaviorCase,type Monitor} from './contracts';
 export type Expr = number | { ref: string } | { op: 'sum'|'multiply'|'clamp'|'threshold'|'delay'|'integrator'|'filter'|'switch'|'pulse'; args: Expr[] };
 export type NodeKind = 'input'|'output'|'inner';
@@ -13,7 +14,7 @@ export type Observation = {id:string;label:string;target:string;key:string;perio
 export type Intervention = {id:string;label:string;target:string;parameter:string;min:number;max:number;defaultValue:number;description:string;step?:number;storage?:'parameter'|'state'};
 export type Edit = {time:number;target:string;parameter:string;before:number;value:number;storage?:'parameter'|'state';purpose:'experiment'|'repair'};
 export type OutputRequirement = {nodeId:string;role:string;condition:string;expected:string;rules:ContractRule[]};
-export type Scenario = {hierarchy?:Hierarchy;behaviorCases:BehaviorCase[];outputRequirements:OutputRequirement[];id:string;title:string;description:string;symptom:string;briefing:{conditions:string;expected:string;expectedFlow:string[];difference:string;firstAction:string};inputs:ManualInput[];nodes:Node[];connections:Connection[];faults:Fault[];observations:Observation[];interventions:Intervention[];visibleNodeIds:string[];visibleConnectionIds:string[];hints:string[];solution:{rootCauseIds:string[];stableSteps:number;causalPath:string[];explanation:string;observations:string;misleading:string}};
+export type Scenario = {reports?:FaultReport[];hierarchy?:Hierarchy;behaviorCases:BehaviorCase[];outputRequirements:OutputRequirement[];id:string;title:string;description:string;symptom:string;briefing:{conditions:string;expected:string;expectedFlow:string[];difference:string;firstAction:string};inputs:ManualInput[];nodes:Node[];connections:Connection[];faults:Fault[];observations:Observation[];interventions:Intervention[];visibleNodeIds:string[];visibleConnectionIds:string[];hints:string[];solution:{rootCauseIds:string[];stableSteps:number;causalPath:string[];explanation:string;observations:string;misleading:string}};
 export type ScheduledEvent = {due:number;seq:number;target:string;source:string;connectionId?:string;value:number;reason:'manual'|'input'};
 export type TriggerRecord = {time:number;nodeId:string;trigger:string;value:number;requester?:string;version?:number};
 export type Activity = {count:number;lastAt:number|null;lastTrigger:string};

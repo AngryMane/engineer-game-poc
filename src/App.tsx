@@ -1,7 +1,7 @@
-import {moduleViewScenario} from './moduleView';
 import React,{useEffect,useState} from 'react';
 import {createWorld,step,observe,intervene,setInput,requestNode,restartWithSettings,type World,type Edit} from './engine';
-import {scenarios} from './scenarios';
+import {scenarios} from './legacyScenarios';
+import {caseScenarios} from './cases';
 import './style.css';
 import {Graph} from './Graph';
 import {Editor} from './Editor';
@@ -51,7 +51,7 @@ export function FlatApp({initialScenario='tutorial',onNavigate}:{initialScenario
  </main>;
 }
 
-export function App({initialScenario='tutorial'}:{initialScenario?:string}){
- const [id,setId]=useState(initialScenario);const s=scenarios.find(s=>s.id===id)!;
- return <HierarchyPlay key={id} s={moduleViewScenario(s)} onScenario={setId}/>;
+export function App({initialScenario='case-00'}:{initialScenario?:string}){
+ const [id,setId]=useState(initialScenario);const s=caseScenarios.find(s=>s.id===id)!;
+ return <HierarchyPlay key={id} s={s} onScenario={setId}/>;
 }

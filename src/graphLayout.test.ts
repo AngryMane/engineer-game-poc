@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {scenarios} from './scenarios';
+import {scenarios} from './legacyScenarios';
 import {moduleViewScenario} from './moduleView';
 import {readGraphLayout} from './graphLayout';
 import {createWorld} from './engine';

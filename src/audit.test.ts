@@ -1,6 +1,6 @@
 import {it,expect} from 'vitest';
 import {createWorld,setInput,step,intervene,restartWithSettings} from './engine';
-import {scenarios} from './scenarios';
+import {scenarios} from './legacyScenarios';
 it('a disabled relationship excludes old inputs and queued deliveries without rewriting completed frames',()=>{
  const s=scenarios[2];let w=createWorld(s);
  for(let i=0;i<5;i++)w=step(s,w,false);
