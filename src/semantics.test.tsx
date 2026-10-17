@@ -61,7 +61,7 @@ describe('presentation-only semantic model',()=>{
   expect(a.connections).toBe(b.connections);expect(a.solution.stableSteps).toBe(b.solution.stableSteps);expect(a.solution.explanation).not.toContain('余剰');
  });
  it('persists the display mode alongside world, selected scope, layouts and notes in v14',()=>{
-  const s=presentScenario(original,'functional'),world=createWorld(s);const data:HierarchySession={version:14,sid:s.id,displayMode:'functional',world,view:{scope:'Storage',selected:'Storage'},layout:{Storage:{N10:{x:20,y:30}}},detailsOpen:true,points:[hierarchySample(s,world)],experiments:[],notes:'hypothesis',prediction:'test request=0',hint:1};
+  const s=presentScenario(original,'functional'),world=createWorld(s);const data:HierarchySession={version:15,sid:s.id,displayMode:'functional',world,recording:{start:world,operations:[]},view:{scope:'Storage',selected:'Storage'},layout:{Storage:{N10:{x:20,y:30}}},detailsOpen:true,points:[hierarchySample(s,world)],experiments:[],notes:'hypothesis',prediction:'test request=0',hint:1};
   expect(readHierarchySession(s,JSON.stringify(data))).toEqual(data);delete data.displayMode;expect(readHierarchySession(s,JSON.stringify(data)).displayMode).toBeUndefined();
   expect(()=>readHierarchySession(s,JSON.stringify({...data,displayMode:'theme'}))).toThrow();
  });

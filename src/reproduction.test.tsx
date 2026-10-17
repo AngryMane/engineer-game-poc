@@ -3,7 +3,8 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {reproductionScenario as s} from './reproductionScenario';
 import {createWorld,setInput,step,intervene,validateBehavior,restartWithSettings,type World} from './engine';
 import {replayExperiment,type ReplayAction,type Recipe} from './experimentReplay';
-import {hierarchySample,readHierarchySession,type HierarchySession} from './hierarchySession';
+import {hierarchySample,readHierarchySession,type HierarchySessionV14} from './hierarchySession';
+import {runToEnd,startPlayback} from './experiment';
 import {presentScenario} from './semanticPresentation';
 import {HierarchyPlay} from './HierarchyPlay';
 import {scopeItems,projectConnections} from './hierarchy';
@@ -31,8 +32,12 @@ describe('causal reproduction discovery',()=>{
  });
  it('stores full snapshots and actions, restores mid-run, and replays after restart exactly',()=>{
   const initial=restartWithSettings(s,intervene(s,createWorld(s),'N06.useAck',1));const original=replayExperiment(s,recipe(initial));
-  const data:HierarchySession={version:14,sid:s.id,world:original.world,runStart:initial,runActions:actions,view:{scope:'Holding',selected:null},detailsOpen:false,points:original.points,notes:'normal',prediction:'same',experiments:[{name:'run',notes:'both outcomes retained',prediction:'',points:original.points,recipe:recipe(initial),logs:original.world.monitor.logs}],hint:0};
-  const loaded=readHierarchySession(s,JSON.stringify(data));expect(replayExperiment(s,loaded.experiments[0].recipe!)).toEqual(original);expect(replayExperiment(s,{initial:loaded.runStart!,actions:loaded.runActions!,until:loaded.world.time})).toEqual(original);
+  // A v14 save is migrated to v15; its experiment and recording still replay to the same world.
+  const data:HierarchySessionV14={version:14,sid:s.id,world:original.world,runStart:initial,runActions:actions,view:{scope:'Holding',selected:null},detailsOpen:false,points:original.points,notes:'normal',prediction:'same',experiments:[{name:'run',notes:'both outcomes retained',prediction:'',points:original.points,recipe:recipe(initial),logs:original.world.monitor.logs}],hint:0};
+  const loaded=readHierarchySession(s,JSON.stringify(data));expect(loaded.version).toBe(15);const ex=loaded.experiments[0];expect(ex).toMatchObject({name:'run',memo:'both outcomes retained',origin:'migrated',until:22});
+  expect(runToEnd(s,startPlayback(s,ex.setup.initial,ex.operations,ex.until)).world).toEqual(original.world);expect(ex.outcome.points).toEqual(original.points);
+  expect(runToEnd(s,startPlayback(s,loaded.recording.start,loaded.recording.operations,loaded.world.time)).world).toEqual(original.world);
+  expect(readHierarchySession(s,JSON.stringify(loaded))).toEqual(loaded);
   const partial=replayExperiment(s,recipe(createWorld(s),actions.slice(0,2),9));const resumed=replayExperiment(s,{initial:JSON.parse(JSON.stringify(partial.world)),actions:actions.slice(2),until:22});expect(resumed.world).toEqual(replayExperiment(s,recipe()).world);
  });
  it('replays interventions at the original tick, including edits after a symptom',()=>{const rec=recipe();rec.actions=[...actions,{kind:'edit',time:15,id:'N06.useAck',value:1,purpose:'experiment'}];const run=replayExperiment(s,rec);expect(run.world.edits.at(-1)?.time).toBe(15);expect(run.world.monitor.logs.map(l=>[l.type,l.time])).toEqual([['onset',13],['recovery',17]]);expect(replayExperiment(s,JSON.parse(JSON.stringify(rec)))).toEqual(run);});

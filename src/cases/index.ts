@@ -11,7 +11,7 @@ const at=(time:number,id:string,value:number)=>({time,id,value});
 export const faultCases:FaultCase[]=[
  {id:'case-00',title:'00 / 練習：変化が出力に届くまで',
   symptom:'故障はありません。供給量を変えたとき、どの出力がいつ変わるかを確かめる練習です。',
-  firstAction:'N01.levelを12に変更して反映し、+1ずつ進めてN29とN21が変わる時刻を比べてください。',
+  firstAction:'N01.levelを12に変更してからRunし、Pauseして、N29とN21が変わった時刻をTimelineで比べてください。',
   reports:[{id:'R00-1',title:'動作確認の依頼',from:'運用担当',summary:'供給量を8から12に上げた記録です。確認出力はすぐ変わりましたが、変換値はもう少し後で変わりました。異常ではないか確認してください。',
    runs:[{label:'A',inputs:[at(0,sup,12)]}],
    entries:[{run:'A',time:1,ids:[sup,'N29','N21'],note:'変更を反映した直後。'},{run:'A',time:2,ids:[sup,'N29','N21'],note:'N29だけが新しい値になった。'},{run:'A',time:4,ids:[sup,'N29','N21'],note:'N21も新しい値になった。'}]}],
@@ -20,7 +20,7 @@ export const faultCases:FaultCase[]=[
 
  {id:'case-01',title:'01 / 周期的に下がる余力',fault:{targetId:'N09',parameter:'load',severity:8},
   symptom:'余力N22が一定の周期で大きく下がります。下がる時刻と、ほかの出力を比べてください。',
-  firstAction:'入力は変えずに+36で進め、N22が下がる時刻を記録してください。',
+  firstAction:'入力は変えずにRunで36ステップほど進め、Output logでN22が下がる時刻を確かめてください。',
   reports:[
    {id:'R01-1',title:'余力が周期的に0になる',from:'監視担当',summary:'何も操作していない間にも、余力がときどき0まで下がります。しばらくすると元に戻ります。',
     runs:[{label:'A',inputs:[]}],
@@ -34,7 +34,7 @@ export const faultCases:FaultCase[]=[
 
  {id:'case-02',title:'02 / 準備完了が遅れる',fault:{targetId:'N14',parameter:'rate',severity:.25},
   symptom:'準備を始めてから準備完了N24が1になるまで、期待より長くかかります。',
-  firstAction:'N03.enabledを1に変更して反映し、+12で進めてN23とN24を仕様と比べてください。',
+  firstAction:'N03.enabledを1に変更してからRunで12ステップほど進め、N23とN24を仕様と比べてください。',
   reports:[
    {id:'R02-1',title:'準備完了まで時間がかかる',from:'運用担当',summary:'準備を始めて10ステップほど待ちましたが、準備完了になりませんでした。もっと待つと完了しました。',
     runs:[{label:'A',inputs:[at(1,en,1)]}],
@@ -48,7 +48,7 @@ export const faultCases:FaultCase[]=[
 
  {id:'case-03',title:'03 / 二つの換算値がずれる',fault:{targetId:'N11',parameter:'scale',severity:3},
   symptom:'変換値N21と要求の換算値N26が、どちらも仕様より大きくなります。',
-  firstAction:'N02.levelを4に変更して反映し、+12で進めてN21・N26・N29を仕様と比べてください。',
+  firstAction:'N02.levelを4に変更してからRunで12ステップほど進め、N21・N26・N29を仕様と比べてください。',
   reports:[
    {id:'R03-1',title:'変換値が大きすぎる',from:'出力担当',summary:'供給量に対して、変換値が仕様より大きく出ています。',
     runs:[{label:'A',inputs:[]}],
@@ -62,7 +62,7 @@ export const faultCases:FaultCase[]=[
 
  {id:'case-04',title:'04 / 大きい供給だけ合わない',fault:{targetId:'N16',parameter:'ceiling',severity:20},
   symptom:'供給量が小さいときは変換値N21が仕様どおりですが、大きくすると仕様より小さくなります。',
-  firstAction:'N01.levelを4、続いて14に変更し、それぞれ+12で進めてN21を仕様と比べてください。',
+  firstAction:'N01.levelを4にした実験と14にした実験を記録し、Experimentsで比べてください。',
   reports:[{id:'R04-1',title:'高負荷時だけ変換値が足りない',from:'出力担当',summary:'通常の供給量では問題ありませんが、供給量を上げた日だけ変換値が仕様に届きませんでした。',
    runs:[{label:'A',inputs:[at(0,sup,6)]},{label:'B',inputs:[at(0,sup,14)]}],
    entries:[{run:'A',time:10,ids:[sup,'N21','N30'],note:'仕様どおり。'},{run:'B',time:10,ids:[sup,'N21','N30'],note:'仕様より小さい。'},{run:'B',time:20,ids:[sup,'N21','N30'],note:'外部値が変わってもN21は同じ値のまま。'}]}],
@@ -71,7 +71,7 @@ export const faultCases:FaultCase[]=[
 
  {id:'case-05',title:'05 / 値は合うが反映が遅い',fault:{targetId:'N07',parameter:'interval',severity:4},
   symptom:'供給量を変えると、変換値N21や余力N22が最終的には仕様の値になりますが、変わる時刻が遅れます。',
-  firstAction:'N01.levelを12に変更して反映し、+1ずつ進めてN29・N21・N22が変わる時刻を記録してください。',
+  firstAction:'N01.levelを12に変更した実験を記録し、変更時刻だけを変えた変種と比べてください。',
   reports:[
    {id:'R05-1',title:'変更の反映が遅い',from:'運用担当',summary:'供給量を変えたあと、変換値が変わるまで時間がかかりました。最後には正しい値になります。',
     runs:[{label:'A',inputs:[at(1,sup,12)]}],
@@ -122,3 +122,50 @@ export function caseScenario(c:FaultCase):Scenario{
   reports:structuredClone(c.reports),hints:c.hints,solution:c.solution};
 }
 export const caseScenarios:Scenario[]=faultCases.map(caseScenario);
+
+/**
+ * All fault cases on one page: the shared system with every case's fault at once. The reports
+ * reuse the cases' hidden input histories, but their notes are written for the combined system,
+ * because observations that were healthy in a single-fault case are not healthy here.
+ * Each report carries the hints of the case it came from.
+ */
+const hintsOf=(id:string)=>faultCases.find(c=>c.id===id)!.hints;
+export const incidentReports:FaultReport[]=[
+ {id:'R01',title:'余力が周期的に0になる',from:'監視担当',summary:'何も操作していない間にも、余力がときどき0まで下がります。しばらくすると戻ります。',hints:hintsOf('case-01'),
+  runs:[{label:'A',inputs:[]}],
+  entries:[{run:'A',time:13,ids:['N22'],note:'記録開始から13ステップ後。'},{run:'A',time:16,ids:['N22'],note:'0まで下がった。'},{run:'A',time:25,ids:['N22'],note:'値が戻った。'},{run:'A',time:28,ids:['N22'],note:'再び0まで下がった。'}]},
+ {id:'R02',title:'準備完了まで時間がかかる',from:'準備担当',summary:'準備を始めて20ステップ以上待ちましたが、準備完了になりませんでした。余力が0の間も準備量は増え続けていました。',hints:hintsOf('case-02'),
+  runs:[{label:'A',inputs:[at(1,en,1)]},{label:'B',inputs:[at(10,en,1)]}],
+  entries:[{run:'A',time:9,ids:['N23','N24'],note:'準備開始から8ステップ後。'},{run:'A',time:15,ids:['N23','N24'],note:'まだ完了していない。'},{run:'A',time:24,ids:['N23','N24'],note:'23ステップ後も完了していない。'},{run:'B',time:14,ids:['N23','N22'],note:'別の日。準備開始から4ステップ後。'},{run:'B',time:16,ids:['N23','N22'],note:'余力は0だが、準備量は増えている。'}]},
+ {id:'R03',title:'変換値と要求の換算値が大きい',from:'出力担当・需要担当',summary:'変換値が供給量に対して仕様より大きく、要求の換算値も要求量に対して仕様の比率になりません。',hints:hintsOf('case-03'),
+  runs:[{label:'A',inputs:[]},{label:'B',inputs:[at(1,req,4)]}],
+  entries:[{run:'A',time:10,ids:[sup,'N29','N21','N30'],note:'供給量の確認N29は入力どおり。'},{run:'B',time:3,ids:[req,'N26'],note:'要求量を4に変更した直後。'},{run:'B',time:8,ids:[req,'N26'],note:'比率が仕様と異なる。'}]},
+ {id:'R04',title:'変換値が同じ値で止まる',from:'出力担当',summary:'供給量6と14で変換値を記録しました。14のときは、外部値が変わっても変換値が同じ値のままでした。',hints:hintsOf('case-04'),
+  runs:[{label:'A',inputs:[at(0,sup,6)]},{label:'B',inputs:[at(0,sup,14)]}],
+  entries:[{run:'A',time:10,ids:[sup,'N21','N30'],note:'供給量6。'},{run:'B',time:10,ids:[sup,'N21','N30'],note:'供給量14。'},{run:'B',time:20,ids:[sup,'N21','N30'],note:'外部値が変わってもN21は同じ値のまま。'}]},
+ {id:'R05',title:'変更の反映が遅く、遅れ方が毎回違う',from:'運用担当',summary:'供給量を変えたあと、余力が変わるまで時間がかかりました。変更した時刻によって遅れの長さが違いました。',hints:hintsOf('case-05'),
+  runs:[{label:'A',inputs:[at(1,sup,12)]},{label:'B',inputs:[at(3,sup,12)]}],
+  entries:[{run:'A',time:5,ids:[sup,'N29','N22'],note:'確認出力は変わったが、余力はまだ増えていない。'},{run:'A',time:6,ids:[sup,'N29','N22'],note:'余力が増えた。'},{run:'B',time:7,ids:[sup,'N29','N22'],note:'別の時刻に変更。余力はまだ増えていない。'},{run:'B',time:9,ids:[sup,'N29','N22'],note:'まだ増えていない。'},{run:'B',time:10,ids:[sup,'N29','N22'],note:'ようやく増えた。'}]},
+ {id:'R06',title:'要求量が多いと余力と準備が悪化する',from:'監視担当・準備担当',summary:'要求量が多い時間帯は余力が小さく、準備量の増え方も小さくなります。要求量を0にした日は準備量の増え方が大きくなりました。',hints:hintsOf('case-06'),
+  runs:[{label:'A',inputs:[at(1,req,4)]},{label:'B',inputs:[at(1,req,3),at(2,en,1)]},{label:'C',inputs:[at(1,req,0),at(2,en,1)]}],
+  entries:[{run:'A',time:10,ids:[sup,req,'N22','N26'],note:'余力が仕様より小さい。'},{run:'B',time:10,ids:[req,'N23','N24'],note:'要求量3。'},{run:'C',time:10,ids:[req,'N23','N24'],note:'要求量0。準備量の増え方が大きい。'}]},
+ {id:'R07',title:'受理したのに使用結果が0',from:'運用担当',summary:'設定値6を受理した後で使用しましたが、結果は0でした。同じ設定値で正しく6が出た日もあります。',hints:hintsOf('case-07'),
+  runs:[{label:'A',inputs:[at(0,req,6),at(0,cap,1),at(6,cap,0),at(10,use,1)]},{label:'B',inputs:[at(0,req,6),at(0,cap,1),at(4,use,1),at(8,cap,0)]}],
+  entries:[{run:'A',time:18,ids:['N27','N28',use],note:'受理した値は6だが、結果は0。'},{run:'B',time:18,ids:['N27','N28',use],note:'正常。'}],missing:'途中で取り込みを止めたことは覚えていますが、操作の時刻と順番は記録されていません。'},
+];
+const incidentCases=faultCases.filter(c=>c.fault);
+const incidentBase=caseScenario({...faultCases[0],hints:[]});
+export const incidentScenario:Scenario={
+ ...incidentBase,id:'incident',title:'障害対応：共通システムに届いた7件のレポート',
+ symptom:'共通システムに7件の障害レポートが届いています。複数の故障が同時に起きている可能性があります。実験で症状を再現し、出力条件をすべて満たすように修復してください。',
+ briefing:{conditions:'',expected:'',expectedFlow:[],difference:'',firstAction:'まず入力を変えずにRunで進め、Output logに出る異常の時刻を確かめてから、レポートの操作を実験として再現してください。'},
+ faults:incidentCases.map(c=>({id:`F-${c.id}`,key:'value',mode:'stuck' as const,startStep:0,...c.fault!})),
+ reports:incidentReports,hints:[],
+ solution:{rootCauseIds:incidentCases.flatMap(c=>c.solution.rootCauseIds),stableSteps:16,
+  causalPath:[],
+  explanation:incidentCases.map(c=>`${c.title}：${c.solution.explanation}（${c.solution.causalPath.join(' → ')}）`).join('\n'),
+  observations:incidentCases.map(c=>`${c.title}：${c.solution.observations}`).join('\n'),
+  misleading:incidentCases.map(c=>`${c.title}：${c.solution.misleading}`).join('\n')},
+};
+/** Pages shown in the investigation selector: the practice case and the combined incident. */
+export const playableScenarios:Scenario[]=[caseScenarios[0],incidentScenario];

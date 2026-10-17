@@ -108,12 +108,12 @@ describe('hierarchical investigation functional behavior',()=>{
 });
 
 describe('hierarchy save and replay',()=>{
- function session():HierarchySession{const world=run(original,setInput(original,createWorld(original),'N01.level',8),7);return {version:14,sid:original.id,world,view:{scope:'M41',selected:'N03'},detailsOpen:true,points:[hierarchySample(original,world)],experiments:[],notes:'比較',prediction:'共通の条件',hint:1};}
+ function session():HierarchySession{const world=run(original,setInput(original,createWorld(original),'N01.level',8),7);return {version:15,sid:original.id,world,recording:{start:world,operations:[]},view:{scope:'M41',selected:'N03'},detailsOpen:true,points:[hierarchySample(original,world)],experiments:[],notes:'比較',prediction:'共通の条件',hint:1};}
  it('restores navigation, game state, external RNG, history and future behavior',()=>{
   const data=session(),restored=readHierarchySession(original,JSON.stringify(data));expect(restored).toEqual(data);expect(run(original,restored.world,30)).toEqual(run(original,data.world,30));
  });
  it('rejects hidden selections, invalid versions and missing state/frame/RNG entries',()=>{
-  const mutations=[(d:HierarchySession)=>{d.view={scope:null,selected:'N03'};},(d:HierarchySession)=>{d.version=12 as 14;},(d:HierarchySession)=>{delete d.world.frames.N04;},(d:HierarchySession)=>{delete d.world.random.N12;},(d:HierarchySession)=>{d.world.parameters.N04.scale=NaN;}];
+  const mutations=[(d:HierarchySession)=>{d.view={scope:null,selected:'N03'};},(d:HierarchySession)=>{d.version=12 as 15;},(d:HierarchySession)=>{delete d.world.frames.N04;},(d:HierarchySession)=>{delete d.world.random.N12;},(d:HierarchySession)=>{d.world.parameters.N04.scale=NaN;}];
   for(const mutate of mutations){const data=session();mutate(data);expect(()=>readHierarchySession(original,JSON.stringify(data))).toThrow();}
  });
 });

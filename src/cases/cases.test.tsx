@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {caseScenarios,faultCases} from './index';
+import {caseScenarios,faultCases,incidentScenario,playableScenarios} from './index';
 import {sharedSystem} from './system';
 import {createWorld,step,setInput,intervene,validate,validateBehavior,type Scenario,type World} from '../engine';
 import {reportObservations} from '../faultReports';
@@ -106,8 +106,42 @@ describe('case presentation',()=>{
   expect(functional.hierarchy!.modules.find(m=>m.id==='Storage')!.label).toBe('Preparation buffer');
   expect(presentScenario(s,'abstract').hierarchy!.modules.find(m=>m.id==='Storage')!.label).toMatch(/^Module [A-Z]$/);
  });
- it('lists every case in the investigation selector',()=>{
+ it('the selector shows the practice page and one page for all fault reports',()=>{
   const html=renderToStaticMarkup(<HierarchyPlay s={healthy} onScenario={()=>{}}/>);
-  for(const s of caseScenarios)expect(html).toContain(s.title);
+  expect(playableScenarios.map(s=>s.id)).toEqual(['case-00','incident']);
+  for(const s of playableScenarios)expect(html).toContain(s.title);
+  for(const s of caseScenarios.slice(1))expect(html).not.toContain(s.title);
+ });
+});
+
+describe('all fault reports on one page',()=>{
+ const s=incidentScenario,directRepairs={'N09.load':2,'N14.rate':1,'N11.scale':2,'N16.ceiling':30,'N07.interval':1,'N10.factor':1,'N19.retention':1};
+ it('uses the shared system with every case fault at once',()=>{
+  expect(()=>validate(s)).not.toThrow();
+  expect(s.nodes).toEqual(sharedSystem.nodes);expect(s.connections).toEqual(sharedSystem.connections);expect(s.outputRequirements).toEqual(sharedSystem.outputRequirements);expect(s.behaviorCases).toEqual(sharedSystem.behaviorCases);
+  expect(s.faults.map(f=>f.targetId).sort()).toEqual(faultCases.filter(c=>c.fault).map(c=>c.fault!.targetId).sort());
+  expect(s.reports!.length).toBe(7);
+ });
+ it('clears only when every fault is repaired, with the alternative repair accepted',()=>{
+  expect(validateBehavior(s,createWorld(s)).passed).toBe(false);
+  expect(validateBehavior(s,edit(s,directRepairs)).passed).toBe(true);
+  const alternative:Record<string,number>={...directRepairs,'N20.useAck':1};delete alternative['N19.retention'];
+  expect(validateBehavior(s,edit(s,alternative)).passed).toBe(true);
+  for(const id of Object.keys(directRepairs)){const partial={...directRepairs};delete (partial as Record<string,number>)[id];expect(validateBehavior(s,edit(s,partial)).passed,id).toBe(false);}
+ },T);
+ it('every report shows evidence that differs from the healthy system and only public ids',()=>{
+  const healthyCopy={...healthy,reports:s.reports};
+  for(const r of s.reports!){
+   const faulty=reportObservations(s,r),normal=reportObservations(healthyCopy,r);
+   expect(faulty.some((o,i)=>JSON.stringify(o.values)!==JSON.stringify(normal[i].values)),r.id).toBe(true);
+   for(const entry of r.entries)for(const id of entry.ids??[])expect(s.nodes.some(n=>n.id===id&&n.kind!=='inner')||s.inputs.some(i=>i.id===id),`${r.id} ${id}`).toBe(true);
+   expect(r.hints!.length).toBeGreaterThan(0);
+  }
+ },T);
+ it('shows all seven reports on one page without internal ids or step buttons',()=>{
+  const html=renderToStaticMarkup(<HierarchyPlay s={s} onScenario={()=>{}}/>);
+  for(const r of s.reports!)expect(html).toContain(r.title);
+  expect(html).not.toMatch(/\bN(0[7-9]|1\d|20)\b/);
+  expect(html).not.toMatch(/>\+\d+</);
  });
 });

@@ -6,7 +6,8 @@ export type ReportRun={label:string;seed?:number;inputs:BehaviorCase['inputs']};
 /** One observation in a report: either recorded values, or ids sampled from the named run. */
 export type ReportEntry={run:string;time:number;ids?:string[];values?:Record<string,number>;note:string};
 /** Evidence handed to the player. Reports describe symptoms; they never name the cause. */
-export type FaultReport={id:string;title:string;from:string;summary:string;runs?:ReportRun[];entries:ReportEntry[];missing?:string};
+/** `hints` are revealed one by one per report on pages that show several reports. */
+export type FaultReport={id:string;title:string;from:string;summary:string;runs?:ReportRun[];entries:ReportEntry[];missing?:string;hints?:string[]};
 export type ReportObservation={run:string;time:number;values:Record<string,number>;note:string};
 
 /** Resolve report entries. Sampled values come from replaying the run on the faulty system. */

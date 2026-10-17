@@ -60,7 +60,7 @@ describe('unified system/module view',()=>{
   const s=moduleViewScenario(scenarios.find(s=>s.id==='hierarchy')!),w=intervene(s,intervene(s,createWorld(s),'N04.scale',.5),'N07.thresholdScale',2);
   expect(moduleById(s,'System').spec.outputs?.map(row=>row.rules)).toEqual(s.outputRequirements.map(row=>row.rules));
   expect(validateBehavior(s,w).passed).toBe(true);
-  const data:HierarchySession={version:14,sid:s.id,world:w,view:{scope:'Transform',selected:'boundary-in:factor'},detailsOpen:true,points:[hierarchySample(s,w)],experiments:[],notes:'',prediction:'',hint:0};
+  const data:HierarchySession={version:15,sid:s.id,world:w,recording:{start:w,operations:[]},view:{scope:'Transform',selected:'boundary-in:factor'},detailsOpen:true,points:[hierarchySample(s,w)],experiments:[],notes:'',prediction:'',hint:0};
   expect(readHierarchySession(s,JSON.stringify(data))).toEqual(data);
  });
 });

@@ -1,7 +1,12 @@
-import {setInput,intervene,requestNode,step,type Scenario,type World,type Edit} from './engine';
-import {hierarchySample,type HierarchyPoint} from './hierarchySession';
+import type {Scenario,World,Edit} from './engine';
+import type {HierarchyPoint} from './hierarchySession';
+import {runToEnd,startPlayback,type Operation} from './experiment';
+/** Save format v14 action shape. Kept to read old saves and as a thin wrapper over experiment.ts. */
 export type ReplayAction={time:number;kind:'input';id:string;value:number}|{time:number;kind:'edit';id:string;value:number;purpose:Edit['purpose']}|{time:number;kind:'request';id:string};
 export type Recipe={initial:World;actions:ReplayAction[];until:number};
+export function toOperations(actions:ReplayAction[]):Operation[]{
+ return actions.map(a=>a.kind==='input'?{atTick:a.time,kind:'setInput',target:a.id,value:a.value}:a.kind==='edit'?{atTick:a.time,kind:'intervene',target:a.id,value:a.value,purpose:a.purpose}:{atTick:a.time,kind:'request',target:a.id});
+}
 export function validateActions(s:Scenario,actions:ReplayAction[],start:number,until:number){
  if(!Array.isArray(actions)||!Number.isInteger(until)||until<start)throw Error('Invalid recipe duration');
  let previous=start;
@@ -14,7 +19,7 @@ export function validateActions(s:Scenario,actions:ReplayAction[],start:number,u
 }
 export function replayExperiment(s:Scenario,recipe:Recipe):{world:World;points:HierarchyPoint[]}{
  validateActions(s,recipe.actions,recipe.initial.time,recipe.until);
- let world=structuredClone(recipe.initial);const points=[hierarchySample(s,world)];let index=0;
- while(true){while(index<recipe.actions.length&&recipe.actions[index].time===world.time){const a=recipe.actions[index++];world=a.kind==='input'?setInput(s,world,a.id,a.value):a.kind==='edit'?intervene(s,world,a.id,a.value,a.purpose):requestNode(s,world,a.id).world;points.push(hierarchySample(s,world));}if(world.time===recipe.until)break;world=step(s,world);points.push(hierarchySample(s,world));}
- return {world,points};
+ const run=runToEnd(s,startPlayback(s,recipe.initial,toOperations(recipe.actions),recipe.until));
+ if(run.status==='failed')throw Error(run.error);
+ return {world:run.world,points:run.points};
 }
