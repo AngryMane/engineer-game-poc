@@ -1,3 +1,5 @@
+import {reproductionScenario} from './reproductionScenario';
+import {semanticScenario} from './semanticScenario';
 import type {ContractExpr,ContractRule,BehaviorCase} from './contracts';
 import type {Scenario,ManualInput} from './engine';
 import {r,op,n,e,obs,signal,configure,editors} from './scenarioBuilders';
@@ -103,5 +105,5 @@ export const scenarios:Scenario[]=[
  briefing:{conditions:'操作する値：input N01のenabled（0または1）。確認する出力：N04・N13・N14。N01.enabledを0から1に変更して反映した時点からのステップ数を数えます。',expected:'N01.enabledを変更すると、N13が先に変わり、N04はそれより遅れて変わります。N14は変わりません。それぞれの値と、変わるまでのステップ数を「出力ごとの動作条件」に示します。',expectedFlow:['入力値を変更','出力ごとに定めた時間を待つ','値が切り替わる','次の変更まで値を保持'],difference:'N01.enabledを変更してからN04が変わるまでに、なぜ余分な時間がかかるのかを調べます。N04の値と、変わるまでのステップ数を期待動作に合わせてください。',firstAction:'グラフ上のN01のenabledを0から1に変更し、「入力を反映」を押します。+12で出力 N04 が10のままか確認し、その後+12を2回押して比較してください。'},
  inputs:inputs2,nodes:nodes2,connections:edges2,faults:[{id:'F02',targetId:'N05',key:'value',parameter:'gain',mode:'gain_change',startStep:0,severity:0.2}],observations:[...nodes2.map(v=>obs(v.id)),...edges2.map(v=>obs(v.id))],interventions:edits2,visibleNodeIds:nodes2.map(v=>v.id),visibleConnectionIds:edges2.map(v=>v.id),hints:['切替時刻だけでなく、少しずつ変化する値の傾きも比較しましょう。','N06が各接続から受信した値と、N06が保持する値の変化を比較しましょう。','N12からN06への接続を一時的に無効にした場合と、N05からN06へ届く値を変えた場合を比較しましょう。'],
  solution:{rootCauseIds:['N05'],stableSteps:36,causalPath:['N05','E04','N06','N07','N02','N03','N04'],explanation:'N05 の gain が1から0.2へ減衰していました。gain を1へ戻すと、N06の値の増え方が変わり、N07が切り替わる値に期待する時刻に到達します。',observations:'N12は−0.05をN06へ送ります。N06はN01から0を受信した次の計算で保持値を0に戻します。N01.enabledを1にし、N05から値が届くと、N07が切り替わるまでは故障時に1ステップあたり0.15、正常時に0.95ずつ増えます。',misleading:'設定の編集だけでは保持値は変わりません。N01から0を受信した次の計算では、N06の保持値が0に戻ります。状態値を手動編集した場合、「設定を保持して再実行」ではその値を初期状態として再適用します。'}}
-,...additionalScenarios,hierarchyScenario
+,...additionalScenarios,hierarchyScenario,semanticScenario,reproductionScenario
 ];

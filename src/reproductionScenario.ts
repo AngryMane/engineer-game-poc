@@ -1,0 +1,46 @@
+import type {Scenario,ManualInput} from './engine';
+import type {ContractExpr,BehaviorCase} from './contracts';
+import type {Module,ModulePort} from './hierarchy';
+import {moduleViewScenario} from './moduleView';
+import {n,r,op,e,signal,configure,editors,obs} from './scenarioBuilders';
+const nodes=[
+ n('N01',0,0,r('param.level'),{level:10},10),n('N02',0,160,r('param.enabled'),{enabled:0}),n('N03',0,320,r('param.enabled'),{enabled:0}),
+ n('N04',200,0,op('switch',r('input.capture'),r('input.level'),r('state.value'))),
+ n('N05',200,160,op('switch',r('input.capture'),r('input.level'),op('switch',r('input.use'),r('state.value'),op('multiply',r('state.value'),r('param.retention')))),{retention:1}),
+ n('N06',400,160,op('switch',r('input.use'),op('switch',r('param.useAck'),r('input.ack'),r('input.held')),0),{useAck:0}),
+ signal('N07',600,0),signal('N08',600,160),
+];
+nodes.slice(0,3).forEach(n=>n.kind='input');nodes.slice(6).forEach(n=>n.kind='output');
+const edges=[e('E01','N01','N04','level'),e('E02','N02','N04','capture'),e('E03','N01','N05','level'),e('E04','N02','N05','capture'),e('E05','N03','N05','use'),e('E06','N05','N06','held'),e('E07','N04','N06','ack'),e('E08','N03','N06','use'),e('E09','N04','N07'),e('E10','N06','N08')];
+configure(nodes,edges,{N01:'level',N02:'enabled',N03:'enabled'},['N01','N04','N05','N06']);
+const inputs:ManualInput[]=[{id:'N01.level',nodeId:'N01',parameter:'level',label:'Level',description:'Value sampled while Capture = 1.',defaultValue:10,min:0,max:16,step:1},...['N02','N03'].map((id,i)=>({id:`${id}.enabled`,nodeId:id,parameter:'enabled',label:i?'Use':'Capture',description:i?'1: output the retained setting; 0: output zero.':'1: sample Level each tick; 0: retain the last setting.',defaultValue:0,min:0,max:1,step:1}))];
+const ci=(id:string,lag:number):ContractExpr=>({source:'input',id,lag});
+const co=(id:string,lag:number):ContractExpr=>({source:'output',id,lag,initial:0});
+const ack:ContractExpr={op:'switch',args:[ci('N02.enabled',3),ci('N01.level',3),co('N07',1)]};
+const result:ContractExpr={op:'switch',args:[ci('N03.enabled',3),co('N07',1),0]};
+const action=(time:number,id:string,value:number)=>({time,id,value});
+const capture='N02.enabled',use='N03.enabled',level='N01.level';
+const behaviorCases:BehaviorCase[]=[{name:'Idle',steps:24,inputs:[]},{name:'Use without capture',steps:24,inputs:[action(2,use,1)]},{name:'Capture only',steps:24,inputs:[action(1,capture,1),action(7,capture,0)]},{name:'Use then capture',steps:32,inputs:[action(0,use,1),action(5,capture,1),action(11,capture,0)]},{name:'Capture maintained',steps:32,inputs:[action(0,capture,1),action(7,use,1),action(14,level,6)]},{name:'Concurrent release / use',steps:32,inputs:[action(0,capture,1),action(7,capture,0),action(7,use,1)]}];
+for(const value of [1,4,10,16])for(const gap of [1,4,10])behaviorCases.push({name:`Retention / ${value} / ${gap}`,steps:48,inputs:[action(0,level,value),action(0,capture,1),action(6,capture,0),action(6+gap,use,1),action(23,use,0),action(27,capture,1),action(28,level,Math.max(0,value-1)),action(33,capture,0),action(36,use,1)]});
+const base:Scenario={id:'reproduction',title:'08 / Intermittent output',description:'Discover the reproduction conditions.',nodes,connections:edges,inputs,observations:[...nodes.map(n=>obs(n.id)),...edges.map(e=>obs(e.id))],interventions:editors(nodes,edges),visibleNodeIds:nodes.map(n=>n.id),visibleConnectionIds:edges.map(e=>e.id),faults:[{id:'F08',targetId:'N05',key:'value',parameter:'retention',mode:'gain_change',startStep:0,severity:0}],symptom:'An earlier operation sometimes affects a later output.',briefing:{conditions:'',expected:'Capture samples Level. Otherwise the setting is retained. Use emits the retained setting, or zero when disabled.',expectedFlow:[],difference:'',firstAction:''},outputRequirements:[{nodeId:'N07',role:'Acknowledged setting',condition:'All ticks; initial 0.',expected:'N07[t] = N02.enabled[t−3] ? N01.level[t−3] : N07[t−1]',rules:[{kind:'equals',expected:ack}]},{nodeId:'N08',role:'Result',condition:'All ticks; initial 0.',expected:'N08[t] = N03.enabled[t−3] ? N07[t−1] : 0',rules:[{kind:'equals',expected:result}]}],behaviorCases,hints:['Compare a successful use with a failed use, including earlier input events.','Keep Level fixed. Change only the order or interval of Capture and Use.','Compare the acknowledged setting and the held setting before Use is enabled.','Try Capture, release it while Use is 0, then enable Use. Compare with releasing Capture and enabling Use together.'],solution:{rootCauseIds:['N05'],stableSteps:16,causalPath:['Capture','Holding','Consumption','Result'],explanation:'The held setting is erased while Capture and Use are both 0. The acknowledged setting remains valid, and Result stays correctly zero until Use reads the erased copy.',observations:'Capture at t=0, release at t=6, Use at t=10: working state is erased at t=8; the first incorrect final output appears at t=13. Use first, keep Capture enabled, or release and Use together avoids the idle erasure.',misleading:'Restore N05.retention to 1, or set N06.useAck to 1. Both pass all final-output cases. Fixed outputs and prefilled state fail.'}};
+export const reproductionScenario=moduleViewScenario(base);
+const h=reproductionScenario.hierarchy!,core=h.modules.find(m=>m.id==='Core')!;
+core.nodes=[];core.children=['Control','Holding','Consumption'];
+const ownership:Record<string,string[]>={Control:['N04'],Holding:['N05'],Consumption:['N06']};
+for(const [id,owned]of Object.entries(ownership)){
+ const ports:ModulePort[]=[];
+ for(const edge of edges){if(owned.includes(edge.to)&&!owned.includes(edge.from))ports.push({id:edge.input,label:edge.input,direction:'in',binding:{kind:'input',connectionId:edge.id},observable:true,description:''});if(owned.includes(edge.from)&&!owned.includes(edge.to)&&!ports.some(p=>p.direction==='out'))ports.push({id:'value',label:'value',direction:'out',binding:{kind:'output',nodeId:edge.from},observable:true,description:''});}
+ const expected=id==='Control'?'value[t] = capture[t] ? level[t] : value[t−1]':id==='Holding'?'value[t] = capture[t] ? level[t] : value[t−1]':'value[t] = use[t] ? held[t] : 0';
+ const m:Module={id,label:id,nodes:owned,children:[],ports,description:'',spec:{condition:'Initial retained setting = 0.',expected,timing:'Every tick; inputs are the values consumed by that computation.',assumptions:'Connections deliver unchanged values on the next tick.',relations:[],outputs:[{portId:'value',condition:'All ticks.',expected,timing:'Every tick.'}]}};h.modules.push(m);
+}
+// Acceptance sequences are executable tests, not a spoiler embedded in the initial UI.
+delete h.modules[0].spec.cases;
+core.spec.outputs=core.ports.filter(p=>p.direction==='out').map(p=>({portId:p.id,condition:'All ticks.',expected:p.binding.kind==='output'&&p.binding.nodeId==='N04'?'Capture selects Level; otherwise retain the setting.':'Use selects the retained setting; otherwise zero.',timing:'See System for end-to-end timing.'}));
+const purposes:Record<string,[string,string]>={System:['Setting system','Capture acknowledges a setting. Use consumes the retained setting. Stopping use does not discard a captured setting.'],Core:['Capture and use','Coordinate acknowledgment, retention and later use of the same setting.'],Control:['Capture control','Acknowledge the setting sampled while Capture is enabled. Keep that acknowledgment when capture stops.'],Holding:['Setting retention','Retain the sampled setting independently of whether it is currently being used.'],Consumption:['Setting use','Emit the retained setting while Use is enabled; emit zero otherwise.']};
+const aliases:Record<string,string>={E01:'l1',E02:'c1',E03:'l2',E04:'c2',E05:'u1',E08:'u2'};
+for(const p of core.ports){if(p.binding.kind==='input')p.id=aliases[p.binding.connectionId];else if(p.binding.kind==='output')p.id=p.binding.nodeId==='N04'?'a':'b';p.label=p.id;}
+core.spec.outputs=[{portId:'a',condition:'Initial 0.',expected:'{{a}}[t] = {{c1}}[t] ? {{l1}}[t] : {{a}}[t−1]',timing:'Every tick; consumed input timestamps.'},{portId:'b',condition:'Initial 0.',expected:'{{b}}[t] = {{u2}}[t] ? {{a}}[t−1] : 0',timing:'Every tick; consumed input timestamps.'}];
+const names:Record<string,string>={l1:'ControlLevel',c1:'ControlCapture',l2:'StoredLevel',c2:'StoredCapture',u1:'HoldUse',u2:'OutputUse',a:'Acknowledged',b:'Result','N01.level':'Level','N02.enabled':'Capture','N03.enabled':'Use',N07:'Acknowledged',N08:'Result',level:'Level',capture:'Capture',use:'Use',held:'Held',ack:'Acknowledged',value:'Setting'};
+h.semantics={modules:Object.fromEntries(h.modules.map(m=>[m.id,{name:purposes[m.id][0],purpose:purposes[m.id][1],ports:Object.fromEntries(m.ports.map(p=>[p.id,{name:names[p.id]??(p.binding.kind==='output'?(p.binding.nodeId==='N04'?'Acknowledged':'Result'):p.id),role:p.binding.kind==='control'?(inputs.find(i=>i.id===(p.binding as {inputId:string}).inputId)?.description??''):p.direction==='out'?'Committed value.':'Value consumed by this module.'}])),assumptions:['Level 0–16; Capture and Use are independent 0/1 controls.'],constraints:['Retaining a setting must not depend on whether it is being used.']}]))};
+
+h.semantics!.hints={abstract:base.hints.map(v=>v.replaceAll('Capture','InputB').replaceAll('Level','InputA').replaceAll('Use','InputC')),functional:base.hints};

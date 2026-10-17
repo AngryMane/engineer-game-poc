@@ -24,3 +24,8 @@
 .module-specification td>small{display:block;color:#90adbb;margin-top:6px}.node-card.output .node-card-ports{margin:8px 0}.interface-stack .node-card.output{padding:12px}
 
 .unified-plane article[data-node],.unified-plane article[data-module],.unified-plane article[data-boundary]{touch-action:none;cursor:grab}.unified-plane .node-heading,.unified-plane .module-heading button:first-child,.unified-plane .boundary-node>button{touch-action:none;cursor:grab}.unified-plane article:active{cursor:grabbing}
+
+.display-mode{margin:12px 0 18px;display:flex;justify-content:flex-end}.display-mode label{display:flex;gap:12px;align-items:center;color:#a7bdc9;font-size:12px}.display-mode select{padding:8px;background:#1b303c;color:#dce8ed;border:1px solid #405864;border-radius:6px}
+/* Compact experiment variants; numeric controls stay usable on narrow screens. */
+.research article{border-top:1px solid #2a3c48;padding:12px 0}.research article table{width:100%;table-layout:fixed}.research article input[type=number]{width:100%;max-width:130px;box-sizing:border-box}.research article td{overflow-wrap:anywhere}.research article details>button{margin-top:10px}.research .chart title{font-size:12px}
+.research article input[type=number]{background:#10232d;color:#dce8ed;border:1px solid #405b6a;border-radius:5px;padding:7px 9px}.research article th,.research article td{text-align:left;padding:6px}.research article label{display:flex;align-items:center;gap:10px;margin-top:10px}

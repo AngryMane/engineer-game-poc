@@ -4,6 +4,7 @@ const spec=(expected:string,timing:string,relations:ModuleSpec['relations']=[]):
 
 /** Presentation-only ownership. Execution nodes, queues, IDs and contracts are untouched. */
 export function moduleViewScenario(source:Scenario):Scenario {
+ if(source.hierarchy?.systemId)return source;
  const inner=source.nodes.filter(n=>n.kind==='inner').map(n=>n.id),outer=source.nodes.filter(n=>n.kind!=='inner').map(n=>n.id);
  const modules:Module[]=[];
  const port=(id:string,direction:'in'|'out',binding:ModulePort['binding'],observable=true):ModulePort=>({id,label:id,direction,binding,observable,description:''});

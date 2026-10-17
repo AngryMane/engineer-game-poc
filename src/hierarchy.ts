@@ -1,3 +1,4 @@
+import type {SemanticModel,ModuleMeaning} from './semanticModel';
 import type {Expr,Scenario,World} from './engine';
 import type {BehaviorCase,ContractRule} from './contracts';
 import {expressionText} from './expressionFormat';
@@ -5,8 +6,8 @@ import {expressionText} from './expressionFormat';
 export type BoundaryBinding = {kind:'output';nodeId:string}|{kind:'input';connectionId:string}|{kind:'control';inputId:string}|{kind:'source';nodeId:string};
 export type ModulePort = {id:string;label:string;direction:'in'|'out';description:string;binding:BoundaryBinding;observable:boolean};
 export type ModuleSpec = {condition:string;expected:string;timing:string;assumptions:string;relations:{output:string;expression:Expr}[];outputs?:{portId:string;condition:string;expected:string;timing:string;rules?:ContractRule[]}[];cases?:BehaviorCase[]};
-export type Module = {id:string;label:string;description:string;nodes:string[];children:string[];ports:ModulePort[];spec:ModuleSpec};
-export type Hierarchy = {systemId?:string;roots:string[];modules:Module[];inputs:{inputId:string;moduleId:string;portId:string;label:string}[];outputs:{nodeId:string;moduleId:string;portId:string;label:string}[]};
+export type Module = {meaning?:ModuleMeaning;id:string;label:string;description:string;nodes:string[];children:string[];ports:ModulePort[];spec:ModuleSpec};
+export type Hierarchy = {inputLabels?:Record<string,string>;semantics?:SemanticModel;systemId?:string;roots:string[];modules:Module[];inputs:{inputId:string;moduleId:string;portId:string;label:string}[];outputs:{nodeId:string;moduleId:string;portId:string;label:string}[]};
 export type HierarchyView = {scope:string|null;selected:string|null};
 export type BoundaryValue = {value:number;time:number|null;method:'設定値'|'計算時の入力'|'計算出力'};
 const number=(v:number)=>Number(v.toFixed(4)).toString();
@@ -24,7 +25,7 @@ export function readBoundary(s:Scenario,w:World,port:ModulePort):BoundaryValue {
 }
 export function boundaryText(s:Scenario,w:World,p:ModulePort){if(!p.observable)return 'unobserved';const v=readBoundary(s,w,p);return `${number(v.value)} ／ ${v.time===null?'initial':`t=${v.time}`} · ${{'設定値':'set','計算時の入力':'consumed','計算出力':'computed'}[v.method]}`;}
 export function moduleExpression(m:Module,e:Expr){return expressionText(e);}
-export function publicLabels(s:Scenario):Record<string,string>{return Object.fromEntries([...(s.hierarchy?.modules.filter(m=>s.hierarchy!.roots.includes(m.id)).flatMap(m=>m.ports.filter(p=>p.observable&&p.binding.kind==='output').map(p=>[(p.binding as {nodeId:string}).nodeId,`${m.label} / ${p.label}`]))??[]),...(s.hierarchy?.inputs.map(p=>[p.inputId,p.label])??[]),...(s.hierarchy?.outputs.map(p=>[p.nodeId,p.label])??[])]);}
+export function publicLabels(s:Scenario):Record<string,string>{return Object.fromEntries([...(s.hierarchy?.modules.filter(m=>s.hierarchy!.roots.includes(m.id)).flatMap(m=>m.ports.filter(p=>p.observable&&p.binding.kind==='output').map(p=>[(p.binding as {nodeId:string}).nodeId,`${m.label} / ${p.label}`]))??[]),...(s.hierarchy?.modules.filter(m=>m.id===s.hierarchy!.systemId).flatMap(m=>m.ports.filter(p=>p.binding.kind==='source').map(p=>[(p.binding as {nodeId:string}).nodeId,p.label]))??[]),...(s.hierarchy?.inputs.map(p=>[p.inputId,p.label])??[]),...(s.hierarchy?.outputs.map(p=>[p.nodeId,p.label])??[])]);}
 export function publicText(s:Scenario,text:string){let result=text;for(const [id,label]of Object.entries(publicLabels(s)).sort((a,b)=>b[0].length-a[0].length))result=result.replaceAll(id,label);return result.replaceAll('「入力を反映」','Apply').replaceAll('「設定を保持して再実行」','Restart');}
 export function visibleSeries(s:Scenario,scope:string|null){
  const items=scopeItems(s,scope),modules=[...(scope?[scope]:[]),...items.modules];
@@ -35,7 +36,7 @@ export type ProjectedConnection={id:string;connectionId:string;from:ProjectedEnd
 export function projectConnections(s:Scenario,w:World|undefined,scope:string|null):ProjectedConnection[]{
  const items=scopeItems(s,scope),inside=scope?new Set(descendants(s,scope)):new Set(s.nodes.map(n=>n.id));
  const endpoint=(nodeId:string,edgeId:string,direction:'in'|'out'):ProjectedEndpoint|null=>{
-  if(items.nodes.includes(nodeId))return {item:nodeId,port:direction==='out'?'output':edgeId,label:direction==='out'?'output':s.connections.find(e=>e.id===edgeId)!.input};
+  if(items.nodes.includes(nodeId))return {item:nodeId,port:direction==='out'?'output':edgeId,label:direction==='out'?'output':s.hierarchy?.inputLabels?.[edgeId]??s.connections.find(e=>e.id===edgeId)!.input};
   const child=items.modules.find(id=>descendants(s,id).includes(nodeId));
   if(child){const port=moduleById(s,child).ports.find(p=>p.direction===direction&&(direction==='out'?p.binding.kind==='output'&&p.binding.nodeId===nodeId:p.binding.kind==='input'&&p.binding.connectionId===edgeId));return port?{item:child,port:port.id,label:port.label}:null;}
   return null;
