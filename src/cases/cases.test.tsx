@@ -140,8 +140,10 @@ describe('all fault reports on one page',()=>{
  },T);
  it('shows all seven reports on one page without internal ids or step buttons',()=>{
   const html=renderToStaticMarkup(<HierarchyPlay s={s} onScenario={()=>{}}/>);
-  for(const r of s.reports!)expect(html).toContain(r.title);
+  for(const r of s.reports!)expect(html).toContain(publicText(presentScenario(s,'abstract'),r.title));
   expect(html).not.toMatch(/\bN(0[7-9]|1\d|20)\b/);
   expect(html).not.toMatch(/>\+\d+</);
+  // Reports name outputs by their on-screen labels, never by undefined functional words.
+  expect(html).not.toMatch(/余力|準備量|変換値|換算値|周期負荷|供給量|要求量|外部値/);
  });
 });

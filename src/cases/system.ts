@@ -105,11 +105,11 @@ const outputRequirements:Scenario['outputRequirements']=[
 // because some sequences would spoil the reproduction case.
 const at=(time:number,id:string,value:number)=>({time,id,value});
 const behaviorCases:BehaviorCase[]=[{name:'入力変更なし',steps:30,inputs:[]}];
-for(const supply of [3,8,16])for(const request of [0,4])behaviorCases.push({name:`供給${supply}・要求${request}で準備、停止、再開`,steps:46,inputs:[at(0,sup,supply),at(0,req,request),at(1,en,1),at(28,en,0),at(34,en,1)]});
-behaviorCases.push({name:'供給量を12→2→16→5と変更',steps:40,inputs:[at(1,sup,12),at(9,sup,2),at(18,sup,16),at(27,sup,5)]});
-for(const seed of [12345,54321])behaviorCases.push({name:`供給・要求・準備を順に変更（外部値シード${seed}）`,seed,steps:56,inputs:[at(2,en,1),at(7,req,6),at(15,sup,14),at(22,req,1),at(30,en,0),at(33,en,1),at(41,sup,0)]});
-behaviorCases.push({name:'設定を取り込まずに使用',steps:24,inputs:[at(2,use,1)]},{name:'取り込み後に使用せず解除',steps:24,inputs:[at(1,cap,1),at(7,cap,0)]},{name:'使用してから取り込み',steps:30,inputs:[at(0,use,1),at(5,cap,1),at(11,cap,0)]},{name:'取り込んだまま使用',steps:30,inputs:[at(0,cap,1),at(7,use,1),at(14,req,6)]},{name:'解除と使用を同時に変更',steps:30,inputs:[at(0,cap,1),at(7,cap,0),at(7,use,1)]});
-for(const level of [1,4,8])for(const gap of [1,6])behaviorCases.push({name:`要求${level}を取り込み、解除から${gap}ステップ後に使用`,steps:44,inputs:[at(0,req,level),at(0,cap,1),at(6,cap,0),at(6+gap,use,1),at(22,use,0),at(26,cap,1),at(27,req,level-1),at(32,cap,0),at(35,use,1)]});
+for(const supply of [3,8,16])for(const request of [0,4])behaviorCases.push({name:`N01.level=${supply}・N02.level=${request}でN03.enabledを1→0→1`,steps:46,inputs:[at(0,sup,supply),at(0,req,request),at(1,en,1),at(28,en,0),at(34,en,1)]});
+behaviorCases.push({name:'N01.levelを12→2→16→5と変更',steps:40,inputs:[at(1,sup,12),at(9,sup,2),at(18,sup,16),at(27,sup,5)]});
+for(const seed of [12345,54321])behaviorCases.push({name:`N01.level・N02.level・N03.enabledを順に変更（N06のシード${seed}）`,seed,steps:56,inputs:[at(2,en,1),at(7,req,6),at(15,sup,14),at(22,req,1),at(30,en,0),at(33,en,1),at(41,sup,0)]});
+behaviorCases.push({name:'N04.enabledは0のままN05.enabledを1',steps:24,inputs:[at(2,use,1)]},{name:'N05.enabledは0のままN04.enabledを1→0',steps:24,inputs:[at(1,cap,1),at(7,cap,0)]},{name:'N05.enabledを1にしてからN04.enabledを1→0',steps:30,inputs:[at(0,use,1),at(5,cap,1),at(11,cap,0)]},{name:'N04.enabledを1のままN05.enabledを1',steps:30,inputs:[at(0,cap,1),at(7,use,1),at(14,req,6)]},{name:'N04.enabledの0とN05.enabledの1を同時に変更',steps:30,inputs:[at(0,cap,1),at(7,cap,0),at(7,use,1)]});
+for(const level of [1,4,8])for(const gap of [1,6])behaviorCases.push({name:`N02.level=${level}でN04.enabledを1→0、${gap}ステップ後にN05.enabledを1`,steps:44,inputs:[at(0,req,level),at(0,cap,1),at(6,cap,0),at(6+gap,use,1),at(22,use,0),at(26,cap,1),at(27,req,level-1),at(32,cap,0),at(35,use,1)]});
 
 // Presentation-only hierarchy. Ports are derived from ownership; ids name each crossing.
 const ownership:Record<string,string[]>={
@@ -136,7 +136,7 @@ const portNames:Record<string,Record<string,string>>={
 const row=(portId:string,expected:string,timing:string,condition='')=>({portId,expected,timing,condition});
 const spec=(outputs:NonNullable<ModuleSpec['outputs']>,assumptions='INPUTは、そのモジュールの計算が最後に使った値。接続は値を加工しない。'):ModuleSpec=>({condition:'',expected:'',timing:'',assumptions,relations:[],outputs});
 const specs:Record<string,ModuleSpec>={
- Intake:spec([row('smp','{{smp}}[t] = {{sup}}[t]','毎ステップ取り込む。')]),
+ Intake:spec([row('smp','{{smp}}[t] = {{sup}}[t]','毎ステップ更新する。')]),
  Load:spec([row('ld','{{ld}}[t] = ((t − 1) mod 12 < 3 ? 2 : 0)','毎ステップ。周期12、幅3、大きさ2。')]),
  Reference:spec([row('fac','{{fac}} = 1','問い合わせに同期して応答する。問い合わせ元によらず同じ値。'),row('scl','{{scl}} = 2','問い合わせに同期して応答する。問い合わせ元によらず同じ値。')]),
  Preparation:spec([
