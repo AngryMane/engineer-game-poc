@@ -1,5 +1,6 @@
 import {validateHierarchy,type Hierarchy} from './hierarchy';
 import type {FaultReport} from './faultReports';
+import {validateSignals,stampFor,deliver,lastMessage,type SignalDefinition,type NodeSignals,type MessageStamp,type MessageRecord,type Adoption} from './signals';
 import {updateMonitor,checkOutputs,validateContracts,type ContractRule,type BehaviorCase,type Monitor} from './contracts';
 export type Expr = number | { ref: string } | { op: 'sum'|'multiply'|'clamp'|'threshold'|'delay'|'integrator'|'filter'|'switch'|'pulse'; args: Expr[] };
 export type NodeKind = 'input'|'output'|'inner';
@@ -7,19 +8,20 @@ export type ManualInput = {id:string;nodeId:string;parameter:string;label:string
 export type InputEvent = {time:number;id:string;before:number;value:number};
 export type Trigger = {type:'manual'|'timer'|'request'|'input'|'random';periodParameter?:string;minInterval?:number;maxInterval?:number};
 export type ExternalInput = {seed:number;value:{type:'uniform';min:number;max:number}|{type:'fixed';value:number}};
-export type Node = { externalInput?:ExternalInput;trigger:Trigger;inputParameter?:string;kind:NodeKind;id:string; label:string; description:string; ports:{id:string;direction:'in'|'out'}[]; initialState:Record<string,number>; parameters:Record<string,number>; update:Record<string,Expr>; x:number;y:number };
-export type Connection = {id:string;from:string;to:string;input:string;enabled:boolean;kind:string;unit:string};
+export type Node = { signals?:NodeSignals;externalInput?:ExternalInput;trigger:Trigger;inputParameter?:string;kind:NodeKind;id:string; label:string; description:string; ports:{id:string;direction:'in'|'out'}[]; initialState:Record<string,number>; parameters:Record<string,number>; update:Record<string,Expr>; x:number;y:number };
+/** `signal` names the information carried (see signals.ts). `sourceKey` sends a state other than `value`. */
+export type Connection = {id:string;from:string;to:string;input:string;enabled:boolean;kind:string;unit:string;signal?:string;sourceKey?:string};
 export type Fault = {id:string;targetId:string;key:string;mode:'stuck'|'drift'|'gain_change'|'leak'|'delay'|'intermittent';startStep:number;severity:number;parameter?:string;condition?:Expr};
 export type Observation = {id:string;label:string;target:string;key:string;period:number;noise:number;offset:number;available:boolean;permission:'public'|'afterStep';unlockStep:number;cost:number};
 export type Intervention = {id:string;label:string;target:string;parameter:string;min:number;max:number;defaultValue:number;description:string;step?:number;storage?:'parameter'|'state'};
 export type Edit = {time:number;target:string;parameter:string;before:number;value:number;storage?:'parameter'|'state';purpose:'experiment'|'repair'};
 export type OutputRequirement = {nodeId:string;role:string;condition:string;expected:string;rules:ContractRule[]};
-export type Scenario = {reports?:FaultReport[];hierarchy?:Hierarchy;behaviorCases:BehaviorCase[];outputRequirements:OutputRequirement[];id:string;title:string;description:string;symptom:string;briefing:{conditions:string;expected:string;expectedFlow:string[];difference:string;firstAction:string};inputs:ManualInput[];nodes:Node[];connections:Connection[];faults:Fault[];observations:Observation[];interventions:Intervention[];visibleNodeIds:string[];visibleConnectionIds:string[];hints:string[];solution:{rootCauseIds:string[];stableSteps:number;causalPath:string[];explanation:string;observations:string;misleading:string}};
-export type ScheduledEvent = {due:number;seq:number;target:string;source:string;connectionId?:string;value:number;reason:'manual'|'input'};
+export type Scenario = {signals?:SignalDefinition[];reports?:FaultReport[];hierarchy?:Hierarchy;behaviorCases:BehaviorCase[];outputRequirements:OutputRequirement[];id:string;title:string;description:string;symptom:string;briefing:{conditions:string;expected:string;expectedFlow:string[];difference:string;firstAction:string};inputs:ManualInput[];nodes:Node[];connections:Connection[];faults:Fault[];observations:Observation[];interventions:Intervention[];visibleNodeIds:string[];visibleConnectionIds:string[];hints:string[];solution:{rootCauseIds:string[];stableSteps:number;causalPath:string[];explanation:string;observations:string;misleading:string}};
+export type ScheduledEvent = {due:number;seq:number;target:string;source:string;connectionId?:string;value:number;reason:'manual'|'input';message?:MessageStamp};
 export type TriggerRecord = {time:number;nodeId:string;trigger:string;value:number;requester?:string;version?:number};
 export type Activity = {count:number;lastAt:number|null;lastTrigger:string};
-export type ComputationFrame = {time:number|null;inputs:Record<string,number>;output:number};
-export type World = {monitor:Monitor;random:Record<string,{value:number;timing:number}>;frames:Record<string,ComputationFrame>;time:number;states:Record<string,Record<string,number>>;parameters:Record<string,Record<string,number>>;past:Record<string,Record<string,number>>[];appliedFaults:string[];inputEvents:InputEvent[];edits:Edit[];verification:{elapsed:number;stable:number;cleared:boolean};pending:ScheduledEvent[];sequence:number;signals:Record<string,number>;nextDue:Record<string,number>;versions:Record<string,number>;activity:Record<string,Activity>;trace:TriggerRecord[]};
+export type ComputationFrame = {time:number|null;inputs:Record<string,number>;output:number;adopted?:Record<string,Adoption>};
+export type World = {monitor:Monitor;random:Record<string,{value:number;timing:number}>;frames:Record<string,ComputationFrame>;time:number;states:Record<string,Record<string,number>>;parameters:Record<string,Record<string,number>>;past:Record<string,Record<string,number>>[];appliedFaults:string[];inputEvents:InputEvent[];edits:Edit[];verification:{elapsed:number;stable:number;cleared:boolean};pending:ScheduledEvent[];sequence:number;signals:Record<string,number>;nextDue:Record<string,number>;versions:Record<string,number>;activity:Record<string,Activity>;trace:TriggerRecord[];messages?:Record<string,MessageRecord[]>};
 const ops = new Set(['sum','multiply','clamp','threshold','delay','integrator','filter','switch','pulse']);
 export function validate(s:Scenario){
  const ids=s.nodes.map(n=>n.id), all=[...ids,...s.connections.map(e=>e.id)];
@@ -40,7 +42,8 @@ export function validate(s:Scenario){
  if(s.connections.some(e=>e.kind==='request'&&s.nodes.find(n=>n.id===e.from)?.trigger.type!=='request'))throw Error('問い合わせ先はrequest triggerのinnerです');
  const visiting=new Set<string>(),visited=new Set<string>();const visit=(id:string)=>{if(visiting.has(id))throw Error('問い合わせの循環を検出しました');if(visited.has(id))return;visiting.add(id);s.connections.filter(e=>e.kind==='request'&&e.to===id).forEach(e=>visit(e.from));visiting.delete(id);visited.add(id);};s.nodes.forEach(n=>visit(n.id));
  if(s.connections.some(e=>s.nodes.find(n=>n.id===e.from)?.kind==='output'))throw Error('outputノードは終端である必要があります');
- s.connections.forEach(e=>{if(!ids.includes(e.from)||!ids.includes(e.to)||typeof e.enabled!=='boolean'||['gain','delaySteps','state','key'].some(key=>key in e))throw Error('不正な接続');});
+ s.connections.forEach(e=>{if(!ids.includes(e.from)||!ids.includes(e.to)||typeof e.enabled!=='boolean'||['gain','delaySteps','state','key'].some(key=>key in e)||e.sourceKey!==undefined&&(e.kind==='request'||!(e.sourceKey in s.nodes.find(n=>n.id===e.from)!.initialState)))throw Error('不正な接続');});
+ validateSignals(s);
  s.observations.forEach(o=>{const node=s.nodes.find(n=>n.id===o.target),edge=s.connections.find(e=>e.id===o.target);if(!all.includes(o.target)||!Number.isInteger(o.period)||o.period<1||!Number.isFinite(o.noise)||!Number.isFinite(o.offset)||o.noise<0||!(node?o.key in node.initialState:edge&&o.key==='value'))throw Error('不正な観測');});
  s.faults.forEach(f=>{if(!ids.includes(f.targetId)||!Number.isFinite(f.severity)||!Number.isInteger(f.startStep)||f.startStep<0||!['stuck','drift','gain_change','leak','delay','intermittent'].includes(f.mode)||(f.mode==='delay'&&(!Number.isInteger(f.severity)||f.severity<0)))throw Error('不正な故障対象');if(f.condition)check(f.condition);});
  s.interventions.forEach(i=>{if(i.storage==='state'){const node=s.nodes.find(n=>n.id===i.target);if(!node||node.kind!=='inner'||!(i.parameter in node.initialState)||i.min>i.max)throw Error('不正な状態編集');return;}if(!all.includes(i.target)||i.min>i.max||i.defaultValue<i.min||i.defaultValue>i.max||!(s.nodes.find(n=>n.id===i.target)?.parameters.hasOwnProperty(i.parameter)??i.parameter==='enabled'))throw Error('不正な介入');});
@@ -67,14 +70,14 @@ function interval(n:Node,w:World){return n.trigger.type==='random'?n.trigger.min
 function externalValue(n:Node,w:World){const v=n.externalInput!.value;return checked(v.type==='fixed'?v.value:v.min+(v.max-v.min)*draw(w,n.id,'value'));}
 export function createWorld(s:Scenario):World {
  validate(s);
- const w:World={monitor:{history:[],alerts:{},logs:[],ready:false},random:{},frames:{},time:0,states:Object.fromEntries([...s.nodes.map(n=>[n.id,copy(n.initialState)]),...s.connections.map(e=>[e.id,{value:0}])]),parameters:Object.fromEntries([...s.nodes.map(n=>[n.id,copy(n.parameters)]),...s.connections.map(e=>[e.id,{enabled:Number(e.enabled)}])]),past:[],appliedFaults:[],inputEvents:[],edits:[],verification:{elapsed:0,stable:0,cleared:false},pending:[],sequence:0,signals:{},nextDue:{},versions:Object.fromEntries(s.nodes.map(n=>[n.id,0])),activity:Object.fromEntries(s.nodes.map(n=>[n.id,{count:0,lastAt:null,lastTrigger:'未発火'}])),trace:[]};
+ const w:World={monitor:{history:[],alerts:{},logs:[],ready:false},random:{},frames:{},time:0,states:Object.fromEntries([...s.nodes.map(n=>[n.id,copy(n.initialState)]),...s.connections.map(e=>[e.id,{value:0}])]),parameters:Object.fromEntries([...s.nodes.map(n=>[n.id,copy(n.parameters)]),...s.connections.map(e=>[e.id,{enabled:Number(e.enabled)}])]),past:[],appliedFaults:[],inputEvents:[],edits:[],verification:{elapsed:0,stable:0,cleared:false},pending:[],sequence:0,signals:{},nextDue:{},versions:Object.fromEntries(s.nodes.map(n=>[n.id,0])),activity:Object.fromEntries(s.nodes.map(n=>[n.id,{count:0,lastAt:null,lastTrigger:'未発火'}])),trace:[],...(s.signals?{messages:{}}:{})};
  materializeFaults(s,w);
  initializeRelations(s,w);
  for(const n of [...s.nodes].sort((a,b)=>a.id.localeCompare(b.id))){if(n.externalInput)w.random[n.id]={value:n.externalInput.seed>>>0,timing:(n.externalInput.seed^0x9e3779b9)>>>0};if(n.trigger.type==='timer'||n.trigger.type==='random')w.nextDue[n.id]=interval(n,w);}
  updateMonitor(s,w);return w;
 }
 function initializeRelations(s:Scenario,w:World){
- for(const e of s.connections){const value=w.parameters[e.id].enabled?w.states[e.from].value:0;w.signals[e.id]=value;w.states[e.id].value=value;}
+ for(const e of s.connections){const value=w.parameters[e.id].enabled?w.states[e.from][e.sourceKey??'value']:0;w.signals[e.id]=value;w.states[e.id].value=value;}
  for(const n of s.nodes)w.frames[n.id]={time:null,inputs:Object.fromEntries(s.connections.filter(e=>e.to===n.id).map(e=>[e.id,w.signals[e.id]])),output:w.states[n.id].value};
 }
 function withInitialStateEdits(s:Scenario,w:World):Scenario {
@@ -97,8 +100,8 @@ function record(w:World,n:Node,trigger:string,value:number,requester?:string){
  const a=w.activity[n.id];a.count++;a.lastAt=w.time;a.lastTrigger=trigger;
  w.trace.push({time:w.time,nodeId:n.id,trigger,value,requester,version:w.versions[n.id]});
 }
-function inputsFor(s:Scenario,w:World,n:Node,stack:string[],ports:Record<string,number>):Record<string,number>{
- const input:Record<string,number>={};
+function inputsFor(s:Scenario,w:World,n:Node,stack:string[],ports:Record<string,number>,adopted:[string,Adoption][]=[]):Record<string,number>{
+ const input:Record<string,number>={};adopted.length=0;
  for(const e of [...s.connections].filter(e=>e.to===n.id).sort((a,b)=>a.id.localeCompare(b.id))){
   let v=w.parameters[e.id].enabled?(w.signals[e.id]??0):0;
   if(e.kind==='request'){
@@ -107,28 +110,31 @@ function inputsFor(s:Scenario,w:World,n:Node,stack:string[],ports:Record<string,
     const provider=s.nodes.find(node=>node.id===e.from)!;
     v=processNode(s,w,provider,'request',stack,n.id);
     checked(v);w.signals[e.id]=v;w.states[e.id].value=v;
+    if(s.signals)deliver(w,e,v,{seq:w.sequence++,origin:e.from,emittedAt:w.time});
     w.trace.push({time:w.time,nodeId:n.id,trigger:'fetch',requester:e.from,value:v,version:w.versions[e.from]});
    }
   }
   ports[e.id]=v;input[e.input]=(input[e.input]??0)+v;
+  const m=s.signals&&w.parameters[e.id].enabled?lastMessage(w,e.id):undefined;if(m)adopted.push([e.id,{seq:m.seq,emittedAt:m.emittedAt,deliveredAt:m.deliveredAt,adoptedAt:w.time,...(m.measuredAt!==undefined?{measuredAt:m.measuredAt}:{})}]);
  }
  return input;
 }
 function processNode(s:Scenario,w:World,n:Node,reason:string,stack:string[]=[],requester?:string):number {
  if(stack.includes(n.id))throw Error('問い合わせの循環を検出しました');
- const old={...w.states[n.id]},ports:Record<string,number>={};const input=inputsFor(s,w,n,[...stack,n.id],ports);
+ const old={...w.states[n.id]},ports:Record<string,number>={},adopted:[string,Adoption][]=[];const input=inputsFor(s,w,n,[...stack,n.id],ports,adopted);
  const next={...old};for(const [key,expr]of Object.entries(n.update))next[key]=checked(evaluate(expr,old,w.parameters[n.id],input,w.time));
  for(const f of activeFaults(s,w,n.id))next[f.key]=checked(applyFault(next[f.key],f,w));
  if(Object.keys(next).some(k=>next[k]!==old[k]))w.versions[n.id]++;
- w.states[n.id]=next;w.frames[n.id]={time:w.time,inputs:ports,output:next.value};record(w,n,reason,next.value,requester);return next.value;
+ w.states[n.id]=next;w.frames[n.id]={time:w.time,inputs:ports,output:next.value,...(s.signals?{adopted:Object.fromEntries(adopted)}:{})};record(w,n,reason,next.value,requester);return next.value;
 }
 function emit(s:Scenario,w:World,n:Node,value:number){
  for(const e of s.connections.filter(e=>e.from===n.id&&e.kind!=='request').sort((a,b)=>a.id.localeCompare(b.id))){
   const p=w.parameters[e.id];if(!p.enabled)continue;
-  const v=value;const delay=activeFaults(s,w,n.id).filter(f=>f.mode==='delay').reduce((sum,f)=>sum+f.severity,0);
+  const v=e.sourceKey?w.states[n.id][e.sourceKey]:value;const delay=activeFaults(s,w,n.id).filter(f=>f.mode==='delay').reduce((sum,f)=>sum+f.severity,0);
   checked(v);if(!Number.isInteger(delay)||delay<0||delay>512)throw Error('ノードの出力遅延の範囲外です');
   w.states[e.id].value=v;
-  w.pending.push({due:w.time+1+delay,seq:w.sequence++,target:e.to,source:n.id,connectionId:e.id,value:v,reason:'input'});
+  const message=s.signals?stampFor(s,w,n,e):undefined;
+  w.pending.push({due:w.time+1+delay,seq:w.sequence++,target:e.to,source:n.id,connectionId:e.id,value:v,reason:'input',...(message?{message}:{})});
  }
 }
 export function step(s:Scenario,world:World,verify=true):World {
@@ -143,9 +149,10 @@ export function step(s:Scenario,world:World,verify=true):World {
   }
   if(!w.parameters[event.connectionId!]?.enabled)continue;
   w.signals[event.connectionId!]=event.value;
+  if(event.message)deliver(w,s.connections.find(e=>e.id===event.connectionId)!,event.value,event.message);
   if(n.kind==='output'){
    if(w.states[n.id].value!==event.value)w.versions[n.id]++;
-   w.states[n.id].value=event.value;w.frames[n.id]={time:w.time,inputs:Object.fromEntries(s.connections.filter(e=>e.to===n.id).map(e=>[e.id,w.signals[e.id]])),output:event.value};record(w,n,'receive',event.value);
+   w.states[n.id].value=event.value;w.frames[n.id]={time:w.time,inputs:Object.fromEntries(s.connections.filter(e=>e.to===n.id).map(e=>[e.id,w.signals[e.id]])),output:event.value,...(event.message?{adopted:{[event.connectionId!]:{seq:event.message.seq,emittedAt:event.message.emittedAt,deliveredAt:w.time,adoptedAt:w.time,...(event.message.measuredAt!==undefined?{measuredAt:event.message.measuredAt}:{})}}}:{})};record(w,n,'receive',event.value);
   }else if(n.trigger.type==='input')emit(s,w,n,processNode(s,w,n,'input'));
  }
  // Timer processors use the latest delivered inputs at this tick. Timer order is

@@ -2,8 +2,10 @@ import type {SemanticModel,ModuleMeaning} from './semanticModel';
 import type {Expr,Scenario,World} from './engine';
 import type {BehaviorCase,ContractRule} from './contracts';
 import {expressionText} from './expressionFormat';
+import {formatValue} from './signals';
 
-export type BoundaryBinding = {kind:'output';nodeId:string}|{kind:'input';connectionId:string}|{kind:'control';inputId:string}|{kind:'source';nodeId:string};
+/** `key` selects a state other than `value` for nodes that send several signals. */
+export type BoundaryBinding = {kind:'output';nodeId:string;key?:string}|{kind:'input';connectionId:string}|{kind:'control';inputId:string}|{kind:'source';nodeId:string};
 export type ModulePort = {id:string;label:string;direction:'in'|'out';description:string;binding:BoundaryBinding;observable:boolean};
 export type ModuleSpec = {condition:string;expected:string;timing:string;assumptions:string;relations:{output:string;expression:Expr}[];outputs?:{portId:string;condition:string;expected:string;timing:string;rules?:ContractRule[]}[];cases?:BehaviorCase[]};
 export type Module = {meaning?:ModuleMeaning;id:string;label:string;description:string;nodes:string[];children:string[];ports:ModulePort[];spec:ModuleSpec};
@@ -19,26 +21,45 @@ export function scopeItems(s:Scenario,scope:string|null){const id=scope??s.hiera
 export function modulePath(s:Scenario,scope:string|null):Module[]{if(!scope)return [];const parent=parentOf(s,scope);return [...modulePath(s,parent?.id??null),moduleById(s,scope)].filter(m=>m.id!==s.hierarchy?.systemId);}
 export function readBoundary(s:Scenario,w:World,port:ModulePort):BoundaryValue {
  const b=port.binding;
- if(b.kind==='output'||b.kind==='source'){const frame=w.frames[b.nodeId];return {value:frame.output,time:frame.time,method:'計算出力'};}
+ if(b.kind==='output'||b.kind==='source'){const frame=w.frames[b.nodeId];return {value:b.kind==='output'&&b.key?w.states[b.nodeId][b.key]:frame.output,time:frame.time,method:'計算出力'};}
  if(b.kind==='control'){const input=s.inputs.find(i=>i.id===b.inputId)!;return {value:w.parameters[input.nodeId][input.parameter],time:[...w.inputEvents].reverse().find(e=>e.id===b.inputId)?.time??null,method:'設定値'};}
  const edge=s.connections.find(e=>e.id===b.connectionId)!,frame=w.frames[edge.to];return {value:frame.inputs[edge.id],time:frame.time,method:'計算時の入力'};
 }
-export function boundaryText(s:Scenario,w:World,p:ModulePort){if(!p.observable)return 'unobserved';const v=readBoundary(s,w,p);return `${number(v.value)} ／ ${v.time===null?'initial':`t=${v.time}`} · ${{'設定値':'set','計算時の入力':'consumed','計算出力':'computed'}[v.method]}`;}
+/** The signal a boundary port carries, for scenarios with a signal dictionary. */
+export function portSignal(s:Scenario,p:ModulePort):string|undefined{
+ if(!s.signals)return undefined;const b=p.binding;
+ if(b.kind==='input')return s.connections.find(e=>e.id===b.connectionId)?.signal;
+ if(b.kind==='control'){const i=s.inputs.find(i=>i.id===b.inputId);return i&&s.nodes.find(n=>n.id===i.nodeId)?.signals?.out?.value;}
+ const n=s.nodes.find(n=>n.id===b.nodeId);return n?.signals?.out?.[b.kind==='output'?b.key??'value':'value']??n?.signals?.in?.signal;
+}
+export function boundaryText(s:Scenario,w:World,p:ModulePort){
+ if(!p.observable)return 'unobserved';const v=readBoundary(s,w,p),signal=portSignal(s,p);
+ if(s.signals){
+  // A value that was never computed or received is shown as such, never as 0.
+  const when=v.time===null?'初期値':`t=${v.time}`;
+  if(p.binding.kind==='input'){const used=w.frames[s.connections.find(e=>e.id===(p.binding as {connectionId:string}).connectionId)!.to].adopted?.[(p.binding as {connectionId:string}).connectionId];return used?`${formatValue(s,signal,v.value)} ／ 採用 t=${used.adoptedAt}（送信 t=${used.emittedAt}${used.measuredAt!==undefined?`・計測 t=${used.measuredAt}`:''}）`:`${formatValue(s,signal,v.value)} ／ ${when}`;}
+  return `${formatValue(s,signal,v.value)} ／ ${p.binding.kind==='control'?(v.time===null?'初期設定':`設定 t=${v.time}`):when}`;
+ }
+ return `${number(v.value)} ／ ${v.time===null?'initial':`t=${v.time}`} · ${{'設定値':'set','計算時の入力':'consumed','計算出力':'computed'}[v.method]}`;
+}
 export function moduleExpression(m:Module,e:Expr){return expressionText(e);}
 export function publicLabels(s:Scenario):Record<string,string>{return Object.fromEntries([...(s.hierarchy?.modules.filter(m=>s.hierarchy!.roots.includes(m.id)).flatMap(m=>m.ports.filter(p=>p.observable&&p.binding.kind==='output').map(p=>[(p.binding as {nodeId:string}).nodeId,`${m.label} / ${p.label}`]))??[]),...(s.hierarchy?.modules.filter(m=>m.id===s.hierarchy!.systemId).flatMap(m=>m.ports.filter(p=>p.binding.kind==='source').map(p=>[(p.binding as {nodeId:string}).nodeId,p.label]))??[]),...(s.hierarchy?.inputs.map(p=>[p.inputId,p.label])??[]),...(s.hierarchy?.outputs.map(p=>[p.nodeId,p.label])??[])]);}
 export function publicText(s:Scenario,text:string){let result=text;for(const [id,label]of Object.entries(publicLabels(s)).sort((a,b)=>b[0].length-a[0].length))result=result.replaceAll(id,label);return result.replaceAll('「入力を反映」','Apply').replaceAll('「設定を保持して再実行」','Restart');}
 export function visibleSeries(s:Scenario,scope:string|null){
- const items=scopeItems(s,scope),modules=[...(scope?[scope]:[]),...items.modules];
+ // With a signal dictionary the top level charts only the ship's own commands and reports; module values are one level down.
+ const items=scopeItems(s,scope),modules=s.signals&&!scope?[]:[...(scope?[scope]:[]),...items.modules];
  return [...modules.flatMap(id=>moduleById(s,id).ports.filter(p=>p.observable).map(p=>({id:boundaryKey(id,p.id),label:`${moduleById(s,id).label} / ${p.label}`}))),...s.observations.filter(o=>items.nodes.includes(o.target)||s.connections.some(e=>e.id===o.target&&items.nodes.includes(e.from)&&items.nodes.includes(e.to))).map(o=>({id:o.id,label:o.label}))];
 }
 export type ProjectedEndpoint={item:string;port:string;label:string};
 export type ProjectedConnection={id:string;connectionId:string;from:ProjectedEndpoint;to:ProjectedEndpoint;request:boolean;enabled:boolean};
 export function projectConnections(s:Scenario,w:World|undefined,scope:string|null):ProjectedConnection[]{
  const items=scopeItems(s,scope),inside=scope?new Set(descendants(s,scope)):new Set(s.nodes.map(n=>n.id));
+ const keyOf=(edgeId:string)=>s.connections.find(e=>e.id===edgeId)!.sourceKey??'value';
+ const sends=(p:ModulePort,nodeId:string,edgeId:string)=>p.direction==='out'&&p.binding.kind==='output'&&p.binding.nodeId===nodeId&&(p.binding.key??'value')===keyOf(edgeId);
  const endpoint=(nodeId:string,edgeId:string,direction:'in'|'out'):ProjectedEndpoint|null=>{
-  if(items.nodes.includes(nodeId))return {item:nodeId,port:direction==='out'?'output':edgeId,label:direction==='out'?'output':s.hierarchy?.inputLabels?.[edgeId]??s.connections.find(e=>e.id===edgeId)!.input};
+  if(items.nodes.includes(nodeId))return {item:nodeId,port:direction==='out'?'output':edgeId,label:s.signals?s.nodes.find(n=>n.id===nodeId)!.label:direction==='out'?'output':s.hierarchy?.inputLabels?.[edgeId]??s.connections.find(e=>e.id===edgeId)!.input};
   const child=items.modules.find(id=>descendants(s,id).includes(nodeId));
-  if(child){const port=moduleById(s,child).ports.find(p=>p.direction===direction&&(direction==='out'?p.binding.kind==='output'&&p.binding.nodeId===nodeId:p.binding.kind==='input'&&p.binding.connectionId===edgeId));return port?{item:child,port:port.id,label:port.label}:null;}
+  if(child){const port=moduleById(s,child).ports.find(p=>p.direction===direction&&(direction==='out'?sends(p,nodeId,edgeId):p.binding.kind==='input'&&p.binding.connectionId===edgeId));return port?{item:child,port:port.id,label:port.label}:null;}
   return null;
  };
  const result:ProjectedConnection[]=[];
@@ -47,7 +68,7 @@ export function projectConnections(s:Scenario,w:World|undefined,scope:string|nul
   let from=endpoint(edge.from,edge.id,'out'),to=endpoint(edge.to,edge.id,'in');
   if(from&&to&&from.item===to.item)continue;
   if(scope&&!inside.has(edge.from)){const p=moduleById(s,scope).ports.find(p=>p.binding.kind==='input'&&p.binding.connectionId===edge.id);if(p)from={item:'boundary-in',port:p.id,label:p.label};}
-  if(scope&&!inside.has(edge.to)){const p=moduleById(s,scope).ports.find(p=>p.direction==='out'&&p.binding.kind==='output'&&p.binding.nodeId===edge.from);if(p)to={item:'boundary-out',port:p.id,label:p.label};}
+  if(scope&&!inside.has(edge.to)){const p=moduleById(s,scope).ports.find(p=>sends(p,edge.from,edge.id));if(p)to={item:'boundary-out',port:p.id,label:p.label};}
   if(from&&to){const id=items.nodes.includes(from.item)&&items.nodes.includes(to.item)?edge.id:`link-${result.length+1}`;result.push({id,connectionId:edge.id,from,to,request:edge.kind==='request',enabled:w?Boolean(w.parameters[edge.id].enabled):edge.enabled});}
  }
  return result;
@@ -75,7 +96,7 @@ export function validateHierarchy(s:Scenario){
   }
   for(const edge of s.connections){
    if(members.has(edge.from)===members.has(edge.to))continue;
-   const valid=members.has(edge.from)?m.ports.some(p=>p.direction==='out'&&p.binding.kind==='output'&&p.binding.nodeId===edge.from):m.ports.some(p=>p.direction==='in'&&p.binding.kind==='input'&&p.binding.connectionId===edge.id);
+   const valid=members.has(edge.from)?m.ports.some(p=>p.direction==='out'&&p.binding.kind==='output'&&p.binding.nodeId===edge.from&&(p.binding.key===undefined||p.binding.key===(edge.sourceKey??'value'))):m.ports.some(p=>p.direction==='in'&&p.binding.kind==='input'&&p.binding.connectionId===edge.id);
    if(!valid)throw Error('公開境界を通らない越境接続');
   }
   const walk=(e:Expr):void=>{if(typeof e==='number'){if(!Number.isFinite(e))throw Error('不正な仕様式');return;}if('ref'in e){if(!m.ports.some(p=>p.id===e.ref)&&e.ref!=='time')throw Error('仕様に内部参照を記載できません');return;}const arity:Record<string,number>={clamp:3,threshold:2,delay:1,integrator:2,filter:3,switch:3,pulse:4};if(!['sum','multiply',...Object.keys(arity)].includes(e.op)||!Array.isArray(e.args)||!e.args.length||arity[e.op]!==undefined&&e.args.length!==arity[e.op])throw Error('不正な仕様式');e.args.forEach(walk);};

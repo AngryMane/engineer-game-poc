@@ -1,7 +1,8 @@
 import React,{useEffect,useState} from 'react';
 import {createWorld,step,observe,intervene,setInput,requestNode,restartWithSettings,type World,type Edit} from './engine';
 import {scenarios} from './legacyScenarios';
-import {playableScenarios} from './cases';
+import {playScenarios} from './scenarioList';
+import {SHIP_SCENARIO_ID} from './spaceship';
 import './style.css';
 import {Graph} from './Graph';
 import {Editor} from './Editor';
@@ -52,7 +53,7 @@ export function FlatApp({initialScenario='tutorial',onNavigate}:{initialScenario
 }
 
 /** The selector shows the practice page and one page for every fault report on the shared system. */
-export function App({initialScenario='case-00'}:{initialScenario?:string}){
- const [id,setId]=useState(initialScenario);const s=playableScenarios.find(s=>s.id===id)!;
+export function App({initialScenario=SHIP_SCENARIO_ID}:{initialScenario?:string}){
+ const [id,setId]=useState(initialScenario);const s=playScenarios.find(s=>s.id===id)!;
  return <HierarchyPlay key={id} s={s} onScenario={setId}/>;
 }

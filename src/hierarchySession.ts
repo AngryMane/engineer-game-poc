@@ -12,8 +12,12 @@ export type HierarchySessionV14={version:14;runStart?:World;runActions?:ReplayAc
  * v15: the run recording uses typed operations stamped with `atTick`, and each experiment
  * carries its own start snapshot, sequence, prediction, memo and computed outcome.
  */
-export type HierarchySession={version:15;sid:string;world:World;recording:Recording;displayMode?:DisplayMode;layout?:GraphLayout;view:HierarchyView;detailsOpen:boolean;points:HierarchyPoint[];notes:string;prediction:string;experiments:Experiment[];hint:number;reportHints?:Record<string,number>;speed?:number};
+export type HierarchySession={version:15|16;sid:string;world:World;recording:Recording;displayMode?:DisplayMode;layout?:GraphLayout;view:HierarchyView;detailsOpen:boolean;points:HierarchyPoint[];notes:string;prediction:string;experiments:Experiment[];hint:number;reportHints?:Record<string,number>;speed?:number};
 export const HIERARCHY_SAVE_KEY='causal-hierarchy-session-v15';
+/** v16: scenarios with a signal dictionary (the ship). Worlds carry message logs; never mixed with v15. */
+export const SHIP_SAVE_KEY='causal-ship-session-v16';
+export const saveKeyFor=(s:Scenario)=>s.signals?SHIP_SAVE_KEY:HIERARCHY_SAVE_KEY;
+export const saveVersionFor=(s:Scenario):15|16=>s.signals?16:15;
 /** Old key. It is read for migration and never written or removed. */
 export const HIERARCHY_SAVE_KEY_V14='causal-hierarchy-session-v14';
 export function hierarchySample(s:Scenario,w:World):HierarchyPoint {
@@ -27,7 +31,7 @@ export function migrateV14(s:Scenario,d:HierarchySessionV14):HierarchySession{
 }
 export function readHierarchySession(s:Scenario,raw:string):HierarchySession {
  let d=JSON.parse(raw) as HierarchySession|HierarchySessionV14;
- if(!d||d.sid!==s.id||![14,15].includes(d.version))throw Error('不正な保存データ');
+ if(!d||d.sid!==s.id||!(s.signals?[16]:[14,15]).includes(d.version))throw Error('不正な保存データ');
  if(d.version===14){
   const old=d;if(!Array.isArray(old.experiments))throw Error('不正な保存データ');
   if(old.runStart){validateSnapshot(s,old.runStart);validateActions(s,old.runActions??[],old.runStart.time,old.world.time);}
@@ -61,6 +65,7 @@ export function validateSnapshot(s:Scenario,w:World){
   if(n.trigger.type==='timer'||n.trigger.type==='random')if(!Number.isInteger(w.nextDue?.[n.id])||w.nextDue[n.id]<=w.time)throw Error('不正な発火時刻');
   if(n.externalInput){const random=w.random?.[n.id];if(!random||![random.value,random.timing].every(x=>Number.isInteger(x)&&x>=0&&x<=0xffffffff)||Object.entries(n.parameters).some(([key,value])=>w.parameters[n.id][key]!==value))throw Error('不正な外部入力');}
  }
+ if(s.signals){if(!w.messages||typeof w.messages!=='object')throw Error('不正なメッセージ履歴');for(const [id,log]of Object.entries(w.messages)){const e=s.connections.find(e=>e.id===id);if(!e||!Array.isArray(log)||log.some(m=>!m||m.connectionId!==id||m.signal!==e.signal||!Number.isFinite(m.value)||![m.seq,m.emittedAt,m.deliveredAt].every(Number.isInteger)||m.deliveredAt>w.time))throw Error('不正なメッセージ履歴');}}
  for(const e of s.connections)if(![0,1].includes(w.parameters?.[e.id]?.enabled)||!Number.isFinite(w.signals[e.id])||!Number.isFinite(w.frames[e.to].inputs[e.id])||!Number.isFinite(w.states?.[e.id]?.value))throw Error('不正な接続状態');
  for(const event of w.pending)if(!s.nodes.some(n=>n.id===event.target)||!Number.isInteger(event.due)||event.due<=w.time||!Number.isFinite(event.value)||event.reason==='input'&&!s.connections.some(e=>e.id===event.connectionId&&e.from===event.source&&e.to===event.target))throw Error('不正な配送待ち');
 }

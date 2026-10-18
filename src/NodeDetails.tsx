@@ -1,5 +1,6 @@
 import type {Expr,Scenario,World} from './engine';
 import {processingText} from './expressionFormat';
+import {formatValue,signalOf,KIND_LABELS} from './signals';
 export {expressionText,processingText} from './expressionFormat';
 const triggerDescriptions={random:'Random interval.',manual:'Once per value change.',timer:'Every period ticks.',input:'On each input event.',request:'On fetch request.'};
 export function NodeDetails({s,w,selected,onRequest,referenceNames={}}:{s:Scenario;w:World;selected:string;onRequest:(id:string)=>void;referenceNames?:Record<string,string>}){
@@ -8,6 +9,7 @@ export function NodeDetails({s,w,selected,onRequest,referenceNames={}}:{s:Scenar
   if(ref.startsWith('param.'))return `${n.id}.${ref.slice(6)}`;
   if(ref.startsWith('state.'))return `${n.id}.state.${ref.slice(6)}`;
   if(!ref.startsWith('input.'))return ref;
+  if(s.signals){const e=s.connections.find(e=>e.to===n.id&&e.input===ref.slice(6));return e?`［${signalOf(s,e.signal)!.label}］`:'0';}
   const sources=s.connections.filter(e=>e.to===n.id&&e.input===ref.slice(6)&&w.parameters[e.id].enabled).sort((a,b)=>a.id.localeCompare(b.id));
   if(!sources.length)return '0';
   const names=sources.map(e=>e.kind==='request'?`fetch(${referenceNames[e.from]??e.from})`:(referenceNames[e.from]??e.from));
@@ -23,6 +25,7 @@ export function NodeDetails({s,w,selected,onRequest,referenceNames={}}:{s:Scenar
  {n.kind==='inner'&&<code className="processing-rule">{n.id}.output = {n.id}.state.value</code>}
  {n.kind==='inner'&&<small>Node ID = last received value · fetch(ID) = requested value · state = stored value before computation.</small>}
  {Object.values(referenceNames).some(name=>name.startsWith('boundary.'))&&<small>boundary.* = module input port.</small>}
+ {s.signals&&<><h3>受け取った情報</h3><ul className="adoptions">{s.connections.filter(e=>e.to===n.id).map(e=>{const d=signalOf(s,e.signal)!,used=w.frames[n.id].adopted?.[e.id];return <li key={e.id}><b>{d.label}</b>（{KIND_LABELS[d.kind]}）：{formatValue(s,d,w.frames[n.id].inputs[e.id])}{used?` · 採用 t=${used.adoptedAt} · 送信 t=${used.emittedAt}${used.measuredAt!==undefined?` · 計測 t=${used.measuredAt}`:''}`:' · 未受信（初期値）'}</li>;})}</ul><small>入力名 input.X は、この表の情報を指します：{s.connections.filter(e=>e.to===n.id).map(e=>`input.${e.input} = ${signalOf(s,e.signal)!.label}`).join('、')}</small></>}
  <h3>Requests</h3>{s.connections.filter(e=>e.kind==='request'&&e.to===n.id&&w.parameters[e.id].enabled).map(e=><p key={e.id}>fetch({referenceNames[e.from]??e.from})</p>)}{!s.connections.some(e=>e.kind==='request'&&e.to===n.id&&w.parameters[e.id].enabled)&&<p>None</p>}
  {n.trigger.type==='request'&&<button onClick={()=>onRequest(n.id)}>Fetch</button>}
  <h3>Activity</h3><p>{w.activity[n.id].count} events · last: {w.activity[n.id].lastAt===null?'—':`t=${w.activity[n.id].lastAt} (${w.activity[n.id].lastTrigger})`}</p>
