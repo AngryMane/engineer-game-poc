@@ -10,6 +10,8 @@ import {readHierarchySession,hierarchySample,SHIP_SAVE_KEY,HIERARCHY_SAVE_KEY,sa
 import {HierarchyPlay} from './HierarchyPlay';
 import {App} from './App';
 import {caseScenarios} from './cases';
+import {addProbe,diagnose,diagnosesLeft,emptyInvestigation,restartProbes,channelKey} from './floorPlan';
+import {ShipFloor,ShipDevicePanel} from './ShipFloor';
 
 const T=120000;
 const faulty=shipScenario(true),healthy=shipScenario(false);
@@ -138,9 +140,10 @@ describe('ship play screen, experiments and saves',()=>{
  it('saves under a new key and schema; old abstract saves are not converted',()=>{
   expect(saveKeyFor(faulty)).toBe(SHIP_SAVE_KEY);expect(saveKeyFor(caseScenarios[0])).toBe(HIERARCHY_SAVE_KEY);
   const world=run(faulty,designerRuns.reproduce,30);
-  const data:HierarchySession={version:16,sid:SHIP_SCENARIO_ID,world,recording:{start:createWorld(faulty),operations:ops},view:{scope:null,selected:null},detailsOpen:false,points:[hierarchySample(faulty,world)],notes:'',prediction:'',experiments:[],hint:0};
+  const data:HierarchySession={version:16,sid:SHIP_SCENARIO_ID,world,recording:{start:createWorld(faulty),operations:ops},view:{scope:null,selected:null},detailsOpen:false,points:[hierarchySample(faulty,world)],notes:'',prediction:'',experiments:[],hint:0,investigation:{probes:[{connectionId:'c_pump_grant',since:12}],diagnosed:['pdu'],extraDiagnoses:0}};
   expect(readHierarchySession(faulty,JSON.stringify(data))).toEqual(data);
   expect(()=>readHierarchySession(faulty,JSON.stringify({...data,version:15}))).toThrow();
+  for(const investigation of [undefined,{probes:[],diagnosed:['nope'],extraDiagnoses:0},{probes:['c_flow','c_bus','c_o2_rate','c_heat'].map(connectionId=>({connectionId,since:0})),diagnosed:[],extraDiagnoses:0}])expect(()=>readHierarchySession(faulty,JSON.stringify({...data,investigation}))).toThrow();
   const broken=structuredClone(data);broken.world.messages!.c_flow[0].signal='power.pumpGrant';expect(()=>readHierarchySession(faulty,JSON.stringify(broken))).toThrow();
  });
  it('the main screen is the ship, with run controls only and a message log tab',()=>{
@@ -151,5 +154,40 @@ describe('ship play screen, experiments and saves',()=>{
   // No mode switch and no designer sequences on the play screen.
   expect(html).not.toContain('Display mode');expect(html).not.toContain('pumpEssential');
   expect(renderToStaticMarkup(<HierarchyPlay s={caseScenarios[0]} onScenario={()=>{}}/>)).not.toContain('>Messages<');
+ });
+});
+
+describe('ship floor plan: what the player sees first',()=>{
+ const v0=emptyInvestigation();
+ const floorHtml=(v=v0,w=createWorld(faulty))=>renderToStaticMarkup(<ShipFloor s={faulty} w={w} v={v} replay={false} start={0} selected={null} onSelect={()=>{}} onInput={()=>{}} onRemoveProbe={()=>{}}/>);
+ const panel=(id:string,v=v0,w=createWorld(faulty))=>renderToStaticMarkup(<ShipDevicePanel s={faulty} w={w} v={v} id={id} replay={false} start={0} purpose="experiment" setPurpose={()=>{}} onEdit={()=>{}} onProbe={()=>{}} onRemoveProbe={()=>{}} onDiagnose={()=>{}}/>);
+ it('shows compartments, equipment and the crew console, but no wiring and no internal values',()=>{
+  const html=floorHtml();
+  for(const label of ['機器ベイ','生命維持区画','電源室','熱制御区画','配電盤','冷却ポンプ','O₂生成装置','乗組員コンソール','計測チャンネル 0/3'])expect(html).toContain(label);
+  expect(html).not.toContain('<path');expect(html).not.toContain('給電許可');expect(html).not.toContain('pumpEssential');
+  const main=renderToStaticMarkup(<App/>);expect(main).toContain('船内配置図');expect(main).not.toContain('hierarchy-graph');
+ });
+ it('every computing device is placed, and the plan is validated with the scenario',()=>{
+  const s=structuredClone(faulty);s.floor!.devices=s.floor!.devices.filter(d=>d.nodeId!=='pdu');expect(()=>validate(s)).toThrow(/配置されていない設備/);
+ });
+ it('a device shows its manual and signals; settings and state stay hidden until it is diagnosed',()=>{
+  const before=panel('pdu');expect(before).toContain('保守マニュアル');expect(before).toContain('冷却ポンプは重要負荷');expect(before).not.toContain('負荷区分');expect(before).toContain('診断する（残り 3 回）');
+  const after=panel('pdu',diagnose(faulty,v0,'pdu'));expect(after).toContain('冷却ポンプの負荷区分');expect(after).toContain('pumpGrant');
+ });
+ it('measurement channels are limited and record from the tick they are placed',()=>{
+  let v=v0;for(const id of ['c_flow_cmd','c_pump_grant','c_o2_grant'])v=addProbe(faulty,v,id,5);
+  expect(()=>addProbe(faulty,v,'c_flow',6)).toThrow(/3本まで/);
+  const w=run(faulty,designerRuns.reproduce,30);
+  const html=panel('pump',{...v,probes:[{connectionId:'c_pump_grant',since:25}]},w);
+  expect(html).toContain('計測点の設置 t=25 以降');expect(html).not.toContain('t=24：');
+  expect(restartProbes(v,0).probes.every(p=>p.since===0)).toBe(true);
+  // The sample keeps every connection, so a probe placed later can read a replayed experiment.
+  expect(hierarchySample(faulty,w).values[channelKey('c_pump_grant')]).toBeCloseTo(1.5);
+ });
+ it('diagnoses are limited but never block play: extra ones are counted',()=>{
+  let v=v0;for(const id of ['pdu','pump','o2gen'])v=diagnose(faulty,v,id);
+  expect(diagnosesLeft(faulty,v)).toBe(0);expect(()=>diagnose(faulty,v,'payload')).toThrow();
+  v=diagnose(faulty,v,'payload',true);expect(v.extraDiagnoses).toBe(1);expect(v.diagnosed).toContain('payload');
+  expect(()=>diagnose(faulty,v0,'loop_temp')).toThrow();
  });
 });

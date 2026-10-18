@@ -54,3 +54,24 @@
 .message-filters{display:flex;flex-wrap:wrap;gap:.4rem 1rem;margin-bottom:.4rem}
 .message-filters label{display:flex;align-items:center;gap:.3rem}
 .adoptions{font-size:.88rem;padding-left:1.2rem}
+
+/* Ship floor plan */
+.ship{display:grid;gap:1rem}
+.console-commands{display:flex;flex-wrap:wrap;gap:1rem;margin:.6rem 0}
+.console-contract{margin-top:.4rem}
+.plan{position:relative;height:420px;margin:.4rem 0;border:2px solid #3b5566;border-radius:120px 40px 40px 120px;background:#0f1a21;overflow:hidden}
+.compartment{position:absolute;border:1px dashed #3b5566;border-radius:10px;padding:6px 8px;color:#91aebf;font-size:.8rem}
+.compartment.outside{border:none;right:0;left:auto!important;width:12%}
+.device{position:absolute;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:96px;padding:6px 8px;border:1px solid #50ddc1;border-radius:10px;background:#152630;color:inherit;cursor:pointer;font-size:.82rem}
+.device.chosen{box-shadow:0 0 0 2px #f8bd69}
+.device-icon{font-size:1.3rem;line-height:1}
+.device small{color:#f8bd69;font-size:.7rem}
+.channels{display:flex;flex-wrap:wrap;gap:.4rem 1rem;align-items:center;font-size:.85rem;padding:.2rem .9rem .8rem}
+.crew-console .console-commands,.crew-console .console-contract{padding:0 .9rem}
+.crew-console .console-contract{padding-bottom:.8rem}
+.channel{border:1px solid #3b5566;border-radius:6px;padding:2px 6px}
+.channel button{margin-left:.4rem;font-size:.75rem;padding:1px 6px}
+.device-signals{list-style:none;padding:0}
+.device-signal{border-top:1px solid #2a3c48;padding:.4rem 0}
+.device-state{font-size:.85rem}
+@media (max-width:700px){.plan{height:560px;border-radius:24px}.device{min-width:70px;font-size:.72rem}}

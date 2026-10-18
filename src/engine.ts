@@ -1,6 +1,7 @@
 import {validateHierarchy,type Hierarchy} from './hierarchy';
 import type {FaultReport} from './faultReports';
 import {validateSignals,stampFor,deliver,lastMessage,type SignalDefinition,type NodeSignals,type MessageStamp,type MessageRecord,type Adoption} from './signals';
+import {validateFloorPlan,type FloorPlan} from './floorPlan';
 import {updateMonitor,checkOutputs,validateContracts,type ContractRule,type BehaviorCase,type Monitor} from './contracts';
 export type Expr = number | { ref: string } | { op: 'sum'|'multiply'|'clamp'|'threshold'|'delay'|'integrator'|'filter'|'switch'|'pulse'; args: Expr[] };
 export type NodeKind = 'input'|'output'|'inner';
@@ -16,7 +17,7 @@ export type Observation = {id:string;label:string;target:string;key:string;perio
 export type Intervention = {id:string;label:string;target:string;parameter:string;min:number;max:number;defaultValue:number;description:string;step?:number;storage?:'parameter'|'state'};
 export type Edit = {time:number;target:string;parameter:string;before:number;value:number;storage?:'parameter'|'state';purpose:'experiment'|'repair'};
 export type OutputRequirement = {nodeId:string;role:string;condition:string;expected:string;rules:ContractRule[]};
-export type Scenario = {signals?:SignalDefinition[];reports?:FaultReport[];hierarchy?:Hierarchy;behaviorCases:BehaviorCase[];outputRequirements:OutputRequirement[];id:string;title:string;description:string;symptom:string;briefing:{conditions:string;expected:string;expectedFlow:string[];difference:string;firstAction:string};inputs:ManualInput[];nodes:Node[];connections:Connection[];faults:Fault[];observations:Observation[];interventions:Intervention[];visibleNodeIds:string[];visibleConnectionIds:string[];hints:string[];solution:{rootCauseIds:string[];stableSteps:number;causalPath:string[];explanation:string;observations:string;misleading:string}};
+export type Scenario = {floor?:FloorPlan;signals?:SignalDefinition[];reports?:FaultReport[];hierarchy?:Hierarchy;behaviorCases:BehaviorCase[];outputRequirements:OutputRequirement[];id:string;title:string;description:string;symptom:string;briefing:{conditions:string;expected:string;expectedFlow:string[];difference:string;firstAction:string};inputs:ManualInput[];nodes:Node[];connections:Connection[];faults:Fault[];observations:Observation[];interventions:Intervention[];visibleNodeIds:string[];visibleConnectionIds:string[];hints:string[];solution:{rootCauseIds:string[];stableSteps:number;causalPath:string[];explanation:string;observations:string;misleading:string}};
 export type ScheduledEvent = {due:number;seq:number;target:string;source:string;connectionId?:string;value:number;reason:'manual'|'input';message?:MessageStamp};
 export type TriggerRecord = {time:number;nodeId:string;trigger:string;value:number;requester?:string;version?:number};
 export type Activity = {count:number;lastAt:number|null;lastTrigger:string};
@@ -52,7 +53,7 @@ export function validate(s:Scenario){
  for(const n of s.nodes.filter(n=>n.kind==='output'))if(s.outputRequirements.filter(r=>r.nodeId===n.id).length!==1)throw Error('出力条件が不足しています');
  for(const test of s.behaviorCases)if(!Number.isInteger(test.steps)||test.steps<1||test.inputs.some(i=>!s.inputs.some(x=>x.id===i.id&&validValue(x,i.value))||!Number.isInteger(i.time)||i.time<0||i.time>=test.steps))throw Error('不正な検証入力');
  s.faults.filter(f=>f.parameter).forEach(f=>{const node=s.nodes.find(n=>n.id===f.targetId);if(!node||!(f.parameter! in node.parameters))throw Error('不正な故障パラメータ');});
- validateContracts(s);validateHierarchy(s);
+ validateContracts(s);validateHierarchy(s);validateFloorPlan(s);
  if(s.visibleNodeIds.some(id=>!ids.includes(id))||s.visibleConnectionIds.some(id=>!s.connections.some(e=>e.id===id)))throw Error('不正な公開グラフ');
 }
 
