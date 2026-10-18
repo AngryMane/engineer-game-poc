@@ -164,6 +164,9 @@ describe('ship floor plan: what the player sees first',()=>{
  it('shows compartments, equipment and the crew console, but no wiring and no internal values',()=>{
   const html=floorHtml();
   for(const label of ['機器ベイ','生命維持区画','電源室','熱制御区画','配電盤','冷却ポンプ','O₂生成装置','乗組員コンソール','計測チャンネル 0/3'])expect(html).toContain(label);
+  // Commands are operated on the plan, at the consoles in the operations room.
+  expect(html).toContain('運用室');expect(html).toMatch(/aria-label="ペイロード運転指令"[^>]*>.*>実験運転<\/button>/);expect(html).toContain('aria-pressed="true"');
+  expect(html.slice(0,html.indexOf('船内配置図'))).not.toContain('type="number"');
   expect(html).not.toContain('<path');expect(html).not.toContain('給電許可');expect(html).not.toContain('pumpEssential');
   const main=renderToStaticMarkup(<App/>);expect(main).toContain('船内配置図');expect(main).not.toContain('hierarchy-graph');
  });

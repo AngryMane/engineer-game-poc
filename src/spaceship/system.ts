@@ -214,22 +214,25 @@ export const observations:Observation[]=nodes.map(n=>obs(n.id));
 // Where equipment sits. Information flow is not drawn; manuals name what each device receives and sends.
 export const floor:FloorPlan={channels:3,diagnoses:3,
  compartments:[
-  {id:'bay',label:'機器ベイ',x:4,y:8,w:34,h:84},
-  {id:'life',label:'生命維持区画',x:40,y:8,w:28,h:40},
-  {id:'power',label:'電源室',x:40,y:52,w:28,h:40},
-  {id:'thermal',label:'熱制御区画',x:70,y:8,w:24,h:84},
+  {id:'bridge',label:'運用室',x:3,y:8,w:16,h:84},
+  {id:'bay',label:'機器ベイ',x:21,y:8,w:24,h:84},
+  {id:'life',label:'生命維持区画',x:47,y:8,w:22,h:40},
+  {id:'power',label:'電源室',x:47,y:52,w:22,h:40},
+  {id:'thermal',label:'熱制御区画',x:71,y:8,w:20,h:84},
   {id:'outside',label:'船外',x:96,y:20,w:0,h:60,outside:true},
  ],
  devices:[
-  {nodeId:'rack',compartment:'bay',x:10,y:24,icon:'▤',manual:['電子機器を収めたラック。電子機器は常に1 kWの熱を出し、科学ペイロードの熱も加わる。','冷却液が熱を運び出す。温度の変化 = 0.4 ×（1 kW + ペイロード発熱 − 0.01 × 冷却液流量 ×（ラック温度 − 放熱ループ温度））。','独立した安全監視系が、ラックの温度を直接読んで乗組員に表示する。']},
-  {nodeId:'rack_sensor',compartment:'bay',x:10,y:52,icon:'◔',manual:['ラック温度センサー。4 tickごとにラックの温度を計測し、計測報告を冷却制御と科学ペイロードに送る。','報告には計測した時刻が付く。受け取った機器は、次の報告が届くまで前の報告を使う。']},
-  {nodeId:'payload',compartment:'bay',x:10,y:76,icon:'✦',manual:['科学ペイロード。運転指令に従い、実験運転で2 kW、待機で0.5 kWの熱をラックに出す。','熱保護：温度センサーの報告が42 °C以上で制限運転（0.5 kW）に入り、36 °C以下で実験運転に戻る。','実際の運転状態を乗組員に報告する。']},
-  {nodeId:'o2gen',compartment:'life',x:46,y:24,icon:'◎',manual:['O₂生成装置。生成モード指令に従い、通常は1 kW、増産は4 kWの電力を配電盤に要求する。','給電許可を受けた電力1 kWあたり0.5 L/minの酸素を生成し、生成量を乗組員に報告する。','増産は生命維持の余裕を作るための運転で、配電上は一般負荷。']},
-  {nodeId:'pdu',compartment:'power',x:44,y:60,icon:'⚡',manual:['配電盤。主バスの容量は5.5 kW。冷却ポンプとO₂生成装置から電力要求を受け、それぞれに給電許可を返す。','冷却ポンプは重要負荷。重要負荷には毎tick、容量の範囲で要求どおり割り当てる。','一般負荷（O₂生成装置）には重要負荷の残りを割り当てる。一般負荷どうしは先着順で、確保済みの分は取り上げない。','割り当ての合計（主バス負荷）を電力計に送る。']},
-  {nodeId:'bus_meter',compartment:'power',x:52,y:76,icon:'◫',manual:['主バス電力計。2 tickごとに主バス負荷を計測し、乗組員に報告する。']},
-  {nodeId:'cool_ctrl',compartment:'thermal',x:74,y:24,icon:'⌬',manual:['冷却制御。受け取った温度報告から冷却流量指令を決め、冷却ポンプに送る。','冷却流量指令 = 10 + 5 ×（温度報告 − 30 °C）を 10〜30 L/min に収めた値。']},
+  {nodeId:'ops_payload',label:'ペイロード運転卓',compartment:'bridge',x:4,y:20,icon:'⌨',manual:['運用担当がペイロードの運転モード（停止・待機・実験運転）を指令する操作卓。指令は科学ペイロードに送られる。']},
+  {nodeId:'ops_o2',label:'生命維持操作卓',compartment:'bridge',x:4,y:56,icon:'⌨',manual:['運用担当がO₂生成装置の生成モード（通常・増産）を指令する操作卓。指令はO₂生成装置に送られる。']},
+  {nodeId:'rack',compartment:'bay',x:23,y:22,icon:'▤',manual:['電子機器を収めたラック。電子機器は常に1 kWの熱を出し、科学ペイロードの熱も加わる。','冷却液が熱を運び出す。温度の変化 = 0.4 ×（1 kW + ペイロード発熱 − 0.01 × 冷却液流量 ×（ラック温度 − 放熱ループ温度））。','独立した安全監視系が、ラックの温度を直接読んで乗組員に表示する。']},
+  {nodeId:'rack_sensor',compartment:'bay',x:23,y:48,icon:'◔',manual:['ラック温度センサー。4 tickごとにラックの温度を計測し、計測報告を冷却制御と科学ペイロードに送る。','報告には計測した時刻が付く。受け取った機器は、次の報告が届くまで前の報告を使う。']},
+  {nodeId:'payload',compartment:'bay',x:23,y:72,icon:'✦',manual:['科学ペイロード。運転指令に従い、実験運転で2 kW、待機で0.5 kWの熱をラックに出す。','熱保護：温度センサーの報告が42 °C以上で制限運転（0.5 kW）に入り、36 °C以下で実験運転に戻る。','実際の運転状態を乗組員に報告する。']},
+  {nodeId:'o2gen',compartment:'life',x:50,y:22,icon:'◎',manual:['O₂生成装置。生成モード指令に従い、通常は1 kW、増産は4 kWの電力を配電盤に要求する。','給電許可を受けた電力1 kWあたり0.5 L/minの酸素を生成し、生成量を乗組員に報告する。','増産は生命維持の余裕を作るための運転で、配電上は一般負荷。']},
+  {nodeId:'pdu',compartment:'power',x:49,y:60,icon:'⚡',manual:['配電盤。主バスの容量は5.5 kW。冷却ポンプとO₂生成装置から電力要求を受け、それぞれに給電許可を返す。','冷却ポンプは重要負荷。重要負荷には毎tick、容量の範囲で要求どおり割り当てる。','一般負荷（O₂生成装置）には重要負荷の残りを割り当てる。一般負荷どうしは先着順で、確保済みの分は取り上げない。','割り当ての合計（主バス負荷）を電力計に送る。']},
+  {nodeId:'bus_meter',compartment:'power',x:56,y:76,icon:'◫',manual:['主バス電力計。2 tickごとに主バス負荷を計測し、乗組員に報告する。']},
+  {nodeId:'cool_ctrl',compartment:'thermal',x:74,y:22,icon:'⌬',manual:['冷却制御。受け取った温度報告から冷却流量指令を決め、冷却ポンプに送る。','冷却流量指令 = 10 + 5 ×（温度報告 − 30 °C）を 10〜30 L/min に収めた値。']},
   {nodeId:'pump',compartment:'thermal',x:74,y:54,icon:'⟳',manual:['冷却ポンプ。冷却流量指令に必要な電力（1 L/minあたり0.125 kW）を配電盤に要求する。','指令流量と、給電許可で出せる流量（許可 ÷ 0.125）の小さいほうの冷却液をラックへ流す。','流量指令を受けている間は「運転中」を乗組員に報告する。','目安：発熱3 kW、放熱ループ温度20 °Cでは、約24 L/min（約3 kW）で釣り合う。']},
-  {nodeId:'loop_temp',label:'放熱器',compartment:'outside',x:90,y:40,icon:'❄',manual:['放熱器。冷却液は船外の放熱器を通ってラックに戻る。戻りの温度（放熱ループ温度）は船外環境で18〜22 °Cの間を揺らぐ。操作も診断もできない。']},
+  {nodeId:'loop_temp',label:'放熱器',compartment:'outside',x:92,y:40,icon:'❄',manual:['放熱器。冷却液は船外の放熱器を通ってラックに戻る。戻りの温度（放熱ループ温度）は船外環境で18〜22 °Cの間を揺らぐ。操作も診断もできない。']},
  ]};
 
 export type ShipSystem=Pick<Scenario,'floor'|'signals'|'nodes'|'connections'|'inputs'|'interventions'|'observations'|'visibleNodeIds'|'visibleConnectionIds'|'outputRequirements'|'behaviorCases'|'hierarchy'>;

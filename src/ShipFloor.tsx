@@ -1,5 +1,5 @@
 import type {Scenario,World,Edit} from './engine';
-import {Field,Editor} from './Editor';
+import {Editor} from './Editor';
 import {HierarchyOutputs} from './HierarchyOutputs';
 import {ModuleSpecification} from './ModuleDetails';
 import {ConnectionMessages} from './MessageLog';
@@ -7,6 +7,8 @@ import {KIND_LABELS,formatValue,lastMessage,signalOf} from './signals';
 import {deviceConnections,diagnosesLeft,probeOf,type Investigation} from './floorPlan';
 
 const nameOf=(s:Scenario,id:string)=>s.nodes.find(n=>n.id===id)?.label??id;
+/** The values a command console offers, with their names from the signal dictionary. */
+const choices=(s:Scenario,input:Scenario['inputs'][number]):[number,string][]=>{const d=signalOf(s,s.nodes.find(n=>n.id===input.nodeId)?.signals?.out?.value);const out:[number,string][]=[];for(let v=input.min;v<=input.max+1e-9;v+=input.step)out.push([v,d?.values?.[v]??String(v)]);return out;};
 /** Since when a probe's values may be shown: replays are measured over the whole run. */
 export const probeSince=(v:Investigation,id:string,replay:boolean,start:number)=>{const p=probeOf(v,id);return p?(replay?start:p.since):undefined;};
 
@@ -17,16 +19,18 @@ export const probeSince=(v:Investigation,id:string,replay:boolean,start:number)=
 export function ShipFloor({s,w,v,replay,start,selected,onSelect,onInput,onRemoveProbe}:{s:Scenario;w:World;v:Investigation;replay:boolean;start:number;selected:string|null;onSelect:(id:string)=>void;onInput:(id:string,value:number)=>void;onRemoveProbe:(connectionId:string)=>void}){
  const f=s.floor!,system=s.hierarchy!.modules.find(m=>m.id===s.hierarchy!.systemId)!;
  return <section className="ship" aria-label="宇宙船">
-  <section className="panel crew-console" aria-label="乗組員コンソール"><div className="panel-title"><h2>乗組員コンソール</h2><span>報告と指令</span></div>
+  <section className="panel crew-console" aria-label="乗組員コンソール"><div className="panel-title"><h2>乗組員コンソール</h2><span>報告と警報。指令は配置図の運用室の操作卓から</span></div>
    <HierarchyOutputs s={s} w={w}/>
-   <div className="console-commands">{s.inputs.map(input=><Field key={input.id} item={{...input,target:nameOf(s,input.nodeId),parameter:input.label}} value={w.parameters[input.nodeId][input.parameter]} onEdit={onInput}/>)}</div>
    <details className="console-contract"><summary>運用契約（クリア条件）</summary><ModuleSpecification s={s} spec={system.spec} moduleId={system.id}/></details>
   </section>
   <section className="panel ship-plan" aria-label="船内配置図"><div className="panel-title"><h2>船内配置図</h2><span>設備をクリックすると、マニュアル・計測点・診断</span></div>
    <div className="plan">
     {f.compartments.map(c=><div key={c.id} className={`compartment${c.outside?' outside':''}`} style={{left:`${c.x}%`,top:`${c.y}%`,width:c.outside?undefined:`${c.w}%`,height:`${c.h}%`}}><span>{c.label}</span></div>)}
     {f.devices.map(d=>{const {inputs,outputs}=deviceConnections(s,d.nodeId),probes=[...inputs,...outputs].filter(e=>probeOf(v,e.id)).length;
-     return <button key={d.nodeId} className={`device${selected===d.nodeId?' chosen':''}`} style={{left:`${d.x}%`,top:`${d.y}%`}} onClick={()=>onSelect(d.nodeId)} aria-label={`設備 ${d.label??nameOf(s,d.nodeId)}`}><span className="device-icon" aria-hidden="true">{d.icon}</span><span>{d.label??nameOf(s,d.nodeId)}</span>{(probes>0||v.diagnosed.includes(d.nodeId))&&<small>{probes>0?`計測 ${probes}`:''}{probes>0&&v.diagnosed.includes(d.nodeId)?' · ':''}{v.diagnosed.includes(d.nodeId)?'診断済み':''}</small>}</button>;})}
+     const label=d.label??nameOf(s,d.nodeId),commands=s.inputs.filter(i=>i.nodeId===d.nodeId),badge=(probes>0||v.diagnosed.includes(d.nodeId))&&<small>{probes>0?`計測 ${probes}`:''}{probes>0&&v.diagnosed.includes(d.nodeId)?' · ':''}{v.diagnosed.includes(d.nodeId)?'診断済み':''}</small>;
+     // Command consoles are operated where they sit on the plan; the button opens the manual and probes.
+     if(commands.length)return <div key={d.nodeId} className={`device console-device${selected===d.nodeId?' chosen':''}`} style={{left:`${d.x}%`,top:`${d.y}%`}}><button className="device-open" onClick={()=>onSelect(d.nodeId)} aria-label={`設備 ${label}`}><span className="device-icon" aria-hidden="true">{d.icon}</span><span>{label}</span></button>{badge}{commands.map(input=><div key={input.id} className="command-switch" role="group" aria-label={input.label}>{choices(s,input).map(([value,text])=><button key={value} className={w.parameters[input.nodeId][input.parameter]===value?'on':''} aria-pressed={w.parameters[input.nodeId][input.parameter]===value} onClick={()=>onInput(input.id,value)}>{text}</button>)}</div>)}</div>;
+     return <button key={d.nodeId} className={`device${selected===d.nodeId?' chosen':''}`} style={{left:`${d.x}%`,top:`${d.y}%`}} onClick={()=>onSelect(d.nodeId)} aria-label={`設備 ${label}`}><span className="device-icon" aria-hidden="true">{d.icon}</span><span>{label}</span>{badge}</button>;})}
    </div>
    <div className="channels" aria-label="計測チャンネル"><b>計測チャンネル {v.probes.length}/{f.channels}</b>{v.probes.map(p=>{const e=s.connections.find(e=>e.id===p.connectionId)!,m=lastMessage(w,e.id),since=probeSince(v,e.id,replay,start)!,shown=m&&m.deliveredAt>=since;
      return <span className="channel" key={p.connectionId}>{signalOf(s,e.signal)!.label}（{nameOf(s,e.from)} → {nameOf(s,e.to)}）：<b>{shown?formatValue(s,e.signal,m.value):'記録待ち'}</b>{shown?` · 受信 t=${m.deliveredAt}`:''}<button onClick={()=>onRemoveProbe(p.connectionId)} aria-label="計測点を外す">外す</button></span>;})}{!v.probes.length&&<span className="muted">計測点はまだありません。</span>}</div>
@@ -47,7 +51,7 @@ export function ShipDevicePanel({s,w,v,id,replay,start,purpose,setPurpose,onEdit
   <h3>信号と計測点</h3><p className="muted">計測チャンネル {v.probes.length}/{s.floor!.channels} 本使用中。値は計測点を置いた時刻から記録されます（実験の再生では最初から）。</p>
   <ul className="device-signals">{inputs.map(e=>row(e,'in'))}{outputs.map(e=>row(e,'out'))}</ul>
   <h3>診断</h3>
-  {n.externalInput?<p className="muted">船外の設備は診断できません。</p>:diagnosed?<>
+  {n.kind==='input'?<p className="muted">{n.externalInput?'船外の設備は診断できません。':'操作卓は診断の対象ではありません。指令は配置図の操作卓から変更します。'}</p>:diagnosed?<>
    <p className="muted">診断済み。内部の状態と設定を表示しています。</p>
    <ul className="device-state">{Object.entries(w.states[id]).map(([key,value])=><li key={key}><code>{key}</code> = {Number(value.toFixed(4))}</li>)}</ul>
    <Editor s={s} w={w} selected={id} purpose={purpose} setPurpose={setPurpose} onEdit={onEdit}/>

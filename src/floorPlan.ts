@@ -44,7 +44,7 @@ export const diagnosesLeft=(s:Scenario,v:Investigation)=>s.floor!.diagnoses+v.ex
 /** Diagnosis reveals a device's settings and internal state. Running out never blocks play: extra diagnoses are allowed and recorded. */
 export function diagnose(s:Scenario,v:Investigation,nodeId:string,extra=false):Investigation{
  if(v.diagnosed.includes(nodeId))return v;
- if(!s.floor!.devices.some(d=>d.nodeId===nodeId)||s.nodes.find(n=>n.id===nodeId)?.externalInput)throw Error('診断できる設備ではありません');
+ if(!s.floor!.devices.some(d=>d.nodeId===nodeId)||s.nodes.find(n=>n.id===nodeId)?.kind==='input')throw Error('診断できる設備ではありません');
  const next=extra&&diagnosesLeft(s,v)<=0?{...v,extraDiagnoses:v.extraDiagnoses+1}:v;
  if(diagnosesLeft(s,next)<=0)throw Error('診断の残り回数がありません');
  return {...next,diagnosed:[...next.diagnosed,nodeId]};

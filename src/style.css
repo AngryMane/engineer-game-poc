@@ -75,3 +75,8 @@
 .device-signal{border-top:1px solid #2a3c48;padding:.4rem 0}
 .device-state{font-size:.85rem}
 @media (max-width:700px){.plan{height:560px;border-radius:24px}.device{min-width:70px;font-size:.72rem}}
+.console-device{cursor:default;align-items:stretch;min-width:0;width:14%}
+.console-device .device-open{display:flex;flex-direction:column;align-items:center;background:none;border:none;color:inherit;cursor:pointer;padding:0}
+.command-switch{display:flex;gap:2px;margin-top:4px}
+.command-switch button{flex:1;padding:3px 4px;font-size:.72rem;border:1px solid #3b5566;border-radius:5px;background:#0f1a21;color:inherit;cursor:pointer}
+.command-switch button.on{background:#50ddc1;color:#0f1a21;border-color:#50ddc1;font-weight:600}
