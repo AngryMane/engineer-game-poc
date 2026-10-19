@@ -88,3 +88,12 @@
 .compartment.here{border:2px solid #50ddc1;box-shadow:0 0 0 3px #50ddc122}
 .room-name{background:transparent;border:none;padding:0;color:#c4d4dc;font-size:.8rem;text-align:left;display:flex;flex-direction:column}.room-name small{color:#7f9aab;font-size:.68rem}.room-name:hover{background:transparent;color:#50ddc1}
 .alarm-elsewhere{color:#ff9980;margin:6px 0}
+.crew-voices{list-style:none;padding:0;margin:8px 0;display:flex;flex-direction:column;gap:4px}.crew-voices li{color:#f8d38a;font-size:.85rem}
+.blast-backdrop{background:radial-gradient(circle at center,#ff7b2e55,#000c 70%);animation:blast-flash .6s ease-out}
+.modal.blast{position:relative;text-align:center;overflow:hidden;animation:blast-shake .5s ease-in-out 2}
+.modal.blast h2{font-size:26px;color:#ffb36b}
+.blast-burst{position:absolute;inset:0;pointer-events:none}.blast-burst span{position:absolute;left:50%;top:40%;width:10px;height:10px;border-radius:3px;background:#ff9f45;transform:rotate(var(--a)) translateY(0);animation:blast-debris 1.2s ease-out forwards}
+@keyframes blast-debris{to{transform:rotate(var(--a)) translateY(-220px) rotate(240deg);opacity:0}}
+@keyframes blast-shake{0%,100%{transform:translate(0)}20%{transform:translate(-8px,4px)}40%{transform:translate(7px,-5px)}60%{transform:translate(-5px,-3px)}80%{transform:translate(4px,5px)}}
+@keyframes blast-flash{from{background:#fff}to{background:radial-gradient(circle at center,#ff7b2e55,#000c 70%)}}
+@media (prefers-reduced-motion:reduce){.blast-backdrop,.modal.blast,.blast-burst span{animation:none}}

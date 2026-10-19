@@ -4,7 +4,7 @@ import {ModuleSpecification} from './ModuleDetails';
 import {Field} from './Editor';
 import {ConnectionMessages} from './MessageLog';
 import {KIND_LABELS,formatValue,lastMessage,signalOf} from './signals';
-import {deviceConnections,displaysIn} from './floorPlan';
+import {deviceConnections,displaysIn,voicesIn} from './floorPlan';
 
 const nameOf=(s:Scenario,id:string)=>s.nodes.find(n=>n.id===id)?.label??id;
 /** The values a command console offers, with their names from the signal dictionary. */
@@ -15,10 +15,11 @@ const choices=(s:Scenario,input:Scenario['inputs'][number]):[number,string][]=>{
  */
 export function ShipFloor({s,w,room,selected,onMove,onSelect,onInput}:{s:Scenario;w:World;room:string;selected:string|null;onMove:(room:string)=>void;onSelect:(id:string)=>void;onInput:(id:string,value:number)=>void}){
  const f=s.floor!,system=s.hierarchy!.modules.find(m=>m.id===s.hierarchy!.systemId)!,here=f.compartments.find(c=>c.id===room)!,shown=displaysIn(s,room);
- const elsewhere=Object.keys(w.monitor.alerts).filter(id=>f.displays[id]&&f.displays[id]!==room).map(id=>f.compartments.find(c=>c.id===f.displays[id])!.label);
+ const elsewhere=Object.keys(w.monitor.alerts).filter(id=>id!==f.alarm&&f.displays[id]&&f.displays[id]!==room).map(id=>f.compartments.find(c=>c.id===f.displays[id])!.label);
  return <section className="ship" aria-label="宇宙船">
   <section className="panel crew-console" aria-label="この部屋の表示"><div className="panel-title"><h2>{here.label}の表示</h2><span>{here.access==='crew'?`${here.role}のクルーの部屋。表示はこの部屋でだけ見られます`:'整備区画（メカニックだけが入れる）。クルー向けの表示はありません'}</span></div>
-   {shown.length?<HierarchyOutputs s={s} w={w} only={shown}/>:<p className="muted">この部屋に表示はありません。表示を見るには、クルーの部屋（{f.compartments.filter(c=>c.access==='crew').map(c=>c.label).join('・')}）へ移動してください。</p>}
+   {shown.length>0&&<HierarchyOutputs s={s} w={w} only={shown}/>}{!shown.some(id=>id!==f.alarm)&&<p className="muted">この部屋に表示はありません。表示を見るには、クルーの部屋（{f.compartments.filter(c=>c.access==='crew').map(c=>c.label).join('・')}）へ移動してください。</p>}
+   {(v=>v.length>0&&<ul className="crew-voices" aria-label="クルーの声">{v.map((line,i)=><li key={i}>「{line}」</li>)}</ul>)(voicesIn(s,w,room))}
    {elsewhere.length>0&&<p className="alarm-elsewhere" role="status">警報：{[...new Set(elsewhere)].join('・')}の表示に異常があります。</p>}
    <details className="console-contract"><summary>運用契約（クリア条件）</summary><ModuleSpecification s={s} spec={system.spec} moduleId={system.id}/></details>
   </section>

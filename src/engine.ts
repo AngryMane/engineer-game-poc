@@ -17,7 +17,8 @@ export type Observation = {id:string;label:string;target:string;key:string;perio
 export type Intervention = {id:string;label:string;target:string;parameter:string;min:number;max:number;defaultValue:number;description:string;step?:number;storage?:'parameter'|'state'};
 export type Edit = {time:number;target:string;parameter:string;before:number;value:number;storage?:'parameter'|'state';purpose:'experiment'|'repair'};
 export type OutputRequirement = {nodeId:string;role:string;condition:string;expected:string;rules:ContractRule[]};
-export type Scenario = {floor?:FloorPlan;signals?:SignalDefinition[];reports?:FaultReport[];hierarchy?:Hierarchy;behaviorCases:BehaviorCase[];outputRequirements:OutputRequirement[];id:string;title:string;description:string;symptom:string;briefing:{conditions:string;expected:string;expectedFlow:string[];difference:string;firstAction:string};inputs:ManualInput[];nodes:Node[];connections:Connection[];faults:Fault[];observations:Observation[];interventions:Intervention[];visibleNodeIds:string[];visibleConnectionIds:string[];hints:string[];solution:{rootCauseIds:string[];stableSteps:number;causalPath:string[];explanation:string;observations:string;misleading:string}};
+/** `terminal`: a state that ends a run when it reaches 1 or more (ship: the explosion). */
+export type Scenario = {terminal?:{nodeId:string;key:string;causeKey?:string;causes?:Record<number,string>};floor?:FloorPlan;signals?:SignalDefinition[];reports?:FaultReport[];hierarchy?:Hierarchy;behaviorCases:BehaviorCase[];outputRequirements:OutputRequirement[];id:string;title:string;description:string;symptom:string;briefing:{conditions:string;expected:string;expectedFlow:string[];difference:string;firstAction:string};inputs:ManualInput[];nodes:Node[];connections:Connection[];faults:Fault[];observations:Observation[];interventions:Intervention[];visibleNodeIds:string[];visibleConnectionIds:string[];hints:string[];solution:{rootCauseIds:string[];stableSteps:number;causalPath:string[];explanation:string;observations:string;misleading:string}};
 export type ScheduledEvent = {due:number;seq:number;target:string;source:string;connectionId?:string;value:number;reason:'manual'|'input';message?:MessageStamp};
 export type TriggerRecord = {time:number;nodeId:string;trigger:string;value:number;requester?:string;version?:number};
 export type Activity = {count:number;lastAt:number|null;lastTrigger:string};
@@ -231,3 +232,5 @@ export function restartWithSettings(s:Scenario,w:World):World {
  return next;
 }
 export const outputObservationIds=(s:Scenario)=>s.observations.filter(o=>s.nodes.some(n=>n.id===o.target&&n.kind==='output')&&o.available).map(o=>o.id);
+
+export const terminated=(s:Scenario,w:World)=>!!s.terminal&&(w.states[s.terminal.nodeId]?.[s.terminal.key]??0)>=1;

@@ -1,4 +1,4 @@
-import {setInput,intervene,requestNode,step,type Scenario,type World,type Edit} from './engine';
+import {setInput,intervene,requestNode,step,terminated,type Scenario,type World,type Edit} from './engine';
 import {hierarchySample,type HierarchyPoint} from './hierarchySession';
 
 /**
@@ -19,7 +19,8 @@ export type PendingOperation=Operation extends infer O?O extends Operation?Omit<
 /** Everything needed to rerun an experiment: the full start snapshot already holds the random state. */
 export type ExperimentSetup={scenarioId:string;seeds:Record<string,number>;initial:World};
 export type OutputSummary={nodeId:string;onsets:number[];recoveries:number[];failingAtEnd:boolean};
-export type ExperimentOutcome={status:'completed'|'failed';finalTime:number;points:HierarchyPoint[];logs:World['monitor']['logs'];outputs:OutputSummary[];error?:string;failedAt?:{index:number;atTick:number}};
+/** `terminatedAt`: the tick a terminal state (ship: explosion) ended the run before `until`. */
+export type ExperimentOutcome={status:'completed'|'failed';terminatedAt?:number;terminalCause?:string;finalTime:number;points:HierarchyPoint[];logs:World['monitor']['logs'];outputs:OutputSummary[];error?:string;failedAt?:{index:number;atTick:number}};
 export type Experiment={id:string;name:string;parentId?:string;origin:'recording'|'variant'|'migrated';prediction:string;memo:string;setup:ExperimentSetup;operations:Operation[];until:number;outcome:ExperimentOutcome};
 export type Recording={start:World;operations:Operation[]};
 
@@ -62,7 +63,7 @@ export function applyOperation(s:Scenario,world:World,op:Operation):World{
 
 /* ---------- playback ---------- */
 
-export type Playback={world:World;points:HierarchyPoint[];operations:Operation[];until:number;next:number;status:'pending'|'completed'|'failed';error?:string;failedAt?:{index:number;atTick:number}};
+export type Playback={world:World;points:HierarchyPoint[];operations:Operation[];until:number;next:number;status:'pending'|'completed'|'failed';terminatedAt?:number;error?:string;failedAt?:{index:number;atTick:number}};
 export function startPlayback(s:Scenario,initial:World,operations:Operation[],until:number):Playback{
  const world=structuredClone(initial),base={world,points:[hierarchySample(s,world)],operations:structuredClone(operations),until,next:0};
  try{validateSequence(s,operations,world.time,until);}catch(e){return {...base,status:'failed',error:(e as Error).message};}
@@ -90,10 +91,15 @@ export function advancePlayback(s:Scenario,pb:Playback,ticks=1):Playback{
   p=applyDue(s,p);if(p.status!=='pending')break;
   let world:World;
   try{world=step(s,p.world);}catch(e){p={...p,status:'failed',error:`t=${p.world.time}→${p.world.time+1}：${(e as Error).message}`};break;}
-  p=settle(s,{...p,world,points:[...p.points,hierarchySample(s,world)]});
+  p={...p,world,points:[...p.points,hierarchySample(s,world)]};
+  // A terminal state (ship: the explosion) ends the run at once; nothing after it is recorded.
+  if(terminated(s,world)){p={...p,status:'completed',terminatedAt:world.time};break;}
+  p=settle(s,p);
  }
  return p;
 }
+/** What ended a run, in the scenario's words (ship: 熱暴走 or 火花). */
+export function terminalCause(s:Scenario,w:World){const t=s.terminal;if(!t?.causeKey||!t.causes)return undefined;return t.causes[w.states[t.nodeId][t.causeKey]];}
 export const runToEnd=(s:Scenario,pb:Playback)=>advancePlayback(s,pb,Number.POSITIVE_INFINITY);
 export const nextOperation=(pb:Playback):Operation|undefined=>pb.operations[pb.next];
 
@@ -102,7 +108,7 @@ export function summarizeOutputs(s:Scenario,world:World,logs=world.monitor.logs)
 }
 export function outcomeOf(s:Scenario,pb:Playback,start:number):ExperimentOutcome{
  const logs=pb.world.monitor.logs.filter(l=>l.time>=start);
- return {status:pb.status==='failed'?'failed':'completed',finalTime:pb.world.time,points:pb.points,logs:structuredClone(logs),outputs:summarizeOutputs(s,pb.world,logs),...(pb.error?{error:pb.error}:{}),...(pb.failedAt?{failedAt:pb.failedAt}:{})};
+ return {status:pb.status==='failed'?'failed':'completed',...(pb.terminatedAt!==undefined?{terminatedAt:pb.terminatedAt,...(terminalCause(s,pb.world)?{terminalCause:terminalCause(s,pb.world)}:{})}:{}),finalTime:pb.world.time,points:pb.points,logs:structuredClone(logs),outputs:summarizeOutputs(s,pb.world,logs),...(pb.error?{error:pb.error}:{}),...(pb.failedAt?{failedAt:pb.failedAt}:{})};
 }
 /** Reruns an experiment from its own start snapshot. The current session is never touched. */
 export function runExperiment(s:Scenario,setup:ExperimentSetup,operations:Operation[],until:number):ExperimentOutcome{
@@ -125,10 +131,12 @@ export type LiveRun={world:World;points:HierarchyPoint[];recording:Recording;not
 export function startLive(s:Scenario,world:World):LiveRun{return {world,points:[hierarchySample(s,world)],recording:{start:structuredClone(world),operations:[]}};}
 /** One tick of Run. A failing tick leaves the world as it was and asks the UI to pause. */
 export function liveTick(s:Scenario,live:LiveRun):LiveRun{
- try{const world=step(s,live.world);return {...live,world,points:[...live.points,hierarchySample(s,world)]};}
+ if(terminated(s,live.world))return {...live,notice:{text:'この船はもう爆発しています。Reset か Restart で新しい船を出してください。',stop:true}};
+ try{const world=step(s,live.world);const next={...live,world,points:[...live.points,hierarchySample(s,world)]};return terminated(s,world)?{...next,notice:{text:`t=${world.time} 船が爆発しました。全員が脱出ポッドで避難しました。`,stop:true}}:next;}
  catch(e){return {...live,notice:{text:String((e as Error).message??e),stop:true}};}
 }
 export function liveApply(s:Scenario,live:LiveRun,pending:PendingOperation):LiveRun{
+ if(terminated(s,live.world))return {...live,notice:{text:'この船はもう爆発しています。Reset か Restart で新しい船を出してください。',stop:false}};
  const op={...pending,atTick:live.world.time} as Operation;
  try{const world=applyOperation(s,live.world,op);if(world===live.world)return live;return {...live,world,points:[...live.points,hierarchySample(s,world)],recording:{...live.recording,operations:[...live.recording.operations,op]}};}
  catch(e){return {...live,notice:{text:(e as Error).message,stop:false}};}

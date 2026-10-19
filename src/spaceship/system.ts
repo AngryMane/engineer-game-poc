@@ -19,7 +19,12 @@ const minus=(v:Expr)=>op('multiply',-1,v);
 export const signals:SignalDefinition[]=[
  {id:'ops.payloadMode',label:'ペイロード運転指令',valueType:'enum',kind:'command',values:{0:'停止',1:'待機',2:'実験運転'},meaning:'クルーがペイロードに出す運転モードの指令。'},
  {id:'ops.o2Mode',label:'O₂生成モード指令',valueType:'enum',kind:'command',values:{0:'通常',1:'増産'},meaning:'クルーが酸素生成装置に出す生成モードの指令。'},
- {id:'thermal.loopTemperature',label:'放熱ループ温度',unit:'°C',valueType:'number',kind:'physical',digits:1,meaning:'放熱器から戻る冷却液の温度。船外環境で揺らぐ。'},
+ {id:'env.fluctuation',label:'船外環境の揺らぎ',unit:'°C',valueType:'number',kind:'physical',digits:1,meaning:'航路の基準温度に加わる、船外環境の揺らぎ（0〜4 °C）。'},
+ {id:'nav.route',label:'航路指令',valueType:'enum',kind:'command',values:{0:'涼しい航路',1:'標準航路',2:'暑い航路'},meaning:'航法担当のクルーが選ぶ航路。航路によって船外の温度が変わる。'},
+ {id:'thermal.loopTemperature',label:'放熱ループ温度',unit:'°C',valueType:'number',kind:'physical',digits:1,meaning:'放熱器から戻る冷却液の温度。航路の基準温度に船外環境の揺らぎが加わる。'},
+ {id:'life.o2Vent',label:'O₂の放出量',unit:'%',valueType:'number',kind:'physical',digits:2,meaning:'満杯のO₂タンクから逃がし弁が機器ベイへ放出した量（タンク容量に対する割合）。'},
+ {id:'bay.o2Level',label:'機器ベイの酸素濃度',unit:'%',valueType:'number',kind:'physical',digits:1,meaning:'機器ベイの空気に含まれる酸素の割合。通常は21 %。'},
+ {id:'safety.fireAlarm',label:'火災警報',valueType:'enum',kind:'status',values:{0:'異常なし',1:'火災',2:'爆発'},meaning:'防災監視が船内全体に出す警報。'},
  {id:'thermal.rackTemperature',label:'機器ラック温度',unit:'°C',valueType:'number',kind:'physical',digits:2,meaning:'機器ラックの実際の温度（物理量）。'},
  {id:'thermal.rackTemperatureReport',label:'機器ラック温度',unit:'°C',valueType:'number',kind:'measurement',digits:2,meaning:'温度センサーが報告したラック温度。計測時刻を持つ。'},
  {id:'thermal.flowCommand',label:'冷却流量指令',unit:'L/min',valueType:'number',kind:'command',digits:2,meaning:'冷却制御がポンプに要求する流量。'},
@@ -56,11 +61,21 @@ const pumpGrant=op('switch',r('param.pumpEssential'),
 const o2Grant=min(r('input.o2Request'),op('sum',r('param.capacity'),minus(pumpGrant)));
 const limited=op('switch',op('threshold',r('input.temperature'),r('param.trip')),1,op('switch',op('threshold',r('param.resume'),r('input.temperature')),0,r('state.limited')));
 const running=op('threshold',r('input.mode'),2);
+const tankRaw=op('sum',r('state.value'),op('multiply',r('param.gain'),op('sum',r('input.rate'),minus(r('param.use')))));
+// Fire: a rack that stays above the ignition temperature, or a spark (payload starting up) in oxygen-rich air.
+const payloadRunning=op('sum',op('threshold',r('input.status'),2),minus(op('threshold',r('input.status'),3)));
+const overheated=op('threshold',r('state.hot'),r('param.hotTicks'));
+const sparkFire=op('multiply',payloadRunning,op('sum',1,minus(r('state.running'))),op('threshold',r('input.o2'),r('param.o2Limit')));
+const ignite=op('clamp',op('sum',overheated,sparkFire),0,1);
 
 export const nodes:Node[]=[
  node('ops_payload','ペイロード運転','input',{type:'manual'},{value:0},{mode:0},{value:r('param.mode')},{out:{value:'ops.payloadMode'}},'クルーのペイロード運転指令。'),
  node('ops_o2','O₂生成モード','input',{type:'manual'},{value:0},{mode:0},{value:r('param.mode')},{out:{value:'ops.o2Mode'}},'クルーのO₂生成モード指令。'),
- {...node('loop_temp','放熱ループ温度','input',{type:'random',minInterval:3,maxInterval:7},{value:20},{},{},{out:{value:'thermal.loopTemperature'}},'放熱器から戻る冷却液の温度。船外環境で揺らぎ、操作できない。'),externalInput:{seed:20261018,value:{type:'uniform',min:18,max:22}}},
+ {...node('space_env','船外環境','input',{type:'random',minInterval:3,maxInterval:7},{value:2},{},{},{out:{value:'env.fluctuation'}},'船外環境の揺らぎ。操作できない。'),externalInput:{seed:20261018,value:{type:'uniform',min:0,max:4}}},
+ node('ops_route','航路','input',{type:'manual'},{value:1},{mode:1},{value:r('param.mode')},{out:{value:'nav.route'}},'クルーの航路指令。'),
+ node('radiator','放熱器','inner',timer(),{value:20},{interval:1,cool:16,standard:18,hot:22},
+  {value:op('sum',op('switch',op('threshold',r('input.route'),2),r('param.hot'),op('switch',op('threshold',r('input.route'),1),r('param.standard'),r('param.cool'))),r('input.env'))},
+  {in:{route:'nav.route',env:'env.fluctuation'},out:{value:'thermal.loopTemperature'}},'航路の基準温度に船外環境の揺らぎを加えた温度の冷却液をラックに戻す。'),
  node('rack','機器ラック','inner',timer(),{value:T0},{interval:1,baseHeat:1,heatCapacity:0.4,transfer:0.01},
   {value:op('sum',r('state.value'),op('multiply',r('param.heatCapacity'),op('sum',r('param.baseHeat'),r('input.heat'),minus(op('multiply',r('param.transfer'),r('input.flow'),op('sum',r('state.value'),minus(r('input.coolant'))))))))},
   {in:{heat:'thermal.payloadHeat',flow:'thermal.coolantFlow',coolant:'thermal.loopTemperature'},out:{value:'thermal.rackTemperature'}},
@@ -89,9 +104,20 @@ export const nodes:Node[]=[
  node('recorder','データレコーダー','inner',timer(),{value:0},{interval:1,rate:1},
   {value:op('sum',r('state.value'),op('multiply',r('param.rate'),r('input.record'),op('sum',op('threshold',r('input.status'),2),minus(op('threshold',r('input.status'),3)))))},
   {in:{record:'science.recordCommand',status:'payload.status'},out:{value:'science.dataVolume'}},'記録中、ペイロードが実験運転していれば毎tickデータを記録する。'),
- node('o2tank','O₂タンク','inner',timer(),{value:60},{interval:1,use:0.5,gain:1},
-  {value:op('clamp',op('sum',r('state.value'),op('multiply',r('param.gain'),op('sum',r('input.rate'),minus(r('param.use'))))),0,100)},
-  {in:{rate:'life.o2Rate'},out:{value:'life.o2Tank'}},'生成されたO₂をため、船内の消費分を差し引く。'),
+ node('o2tank','O₂タンク','inner',timer(),{value:60,vent:0},{interval:1,use:0.5,gain:1},
+  {value:op('clamp',tankRaw,0,100),vent:op('clamp',op('sum',tankRaw,-100),0,1000)},
+  {in:{rate:'life.o2Rate'},out:{value:'life.o2Tank',vent:'life.o2Vent'}},'生成されたO₂をため、船内の消費分を差し引く。満杯のときは、あふれた分を逃がし弁から機器ベイへ放出する。'),
+ node('bay_air','換気ファン','inner',timer(),{value:21},{interval:1,fan:1.5},
+  {value:op('clamp',op('sum',r('state.value'),r('input.vent'),minus(r('param.fan'))),21,60)},
+  {in:{vent:'life.o2Vent'},out:{value:'bay.o2Level'}},'機器ベイの空気を船外へ排出する。状態は機器ベイの酸素濃度。'),
+ node('hazard','防災監視','inner',timer(),{value:0,hot:0,running:0,fire:0,cause:0,exploded:0},{interval:1,ignition:42,hotTicks:3,o2Limit:30,burnTicks:5},
+  {hot:op('switch',op('threshold',r('input.temp'),r('param.ignition')),op('sum',r('state.hot'),1),0),
+   running:payloadRunning,
+   fire:op('switch',r('state.fire'),op('sum',r('state.fire'),1),ignite),
+   cause:op('switch',r('state.cause'),r('state.cause'),op('switch',overheated,1,op('multiply',2,sparkFire))),
+   exploded:op('threshold',r('state.fire'),r('param.burnTicks')),
+   value:op('switch',op('threshold',r('state.fire'),r('param.burnTicks')),2,op('clamp',op('sum',r('state.fire'),ignite),0,1))},
+  {in:{temp:'thermal.rackTemperature',o2:'bay.o2Level',status:'payload.status'},out:{value:'safety.fireAlarm'}},'機器ベイの熱暴走と引火を監視する。火災が続くと船が爆発する。'),
  node('peak_meter','ピーク表示器','inner',timer(),{value:FLOW0*PUMP_KW+1},{interval:1},
   {value:op('switch',r('input.mode'),r('input.load'),op('clamp',r('state.value'),r('input.load'),1000))},
   {in:{load:'power.busLoadReport',mode:'power.peakMode'},out:{value:'power.busPeak'}},'受け取った主バス負荷の最大値を保持する。'),
@@ -101,6 +127,8 @@ export const nodes:Node[]=[
  node('rep_tank','O₂タンク残量','output',{type:'input'},{value:60},{},{value:r('input.signal')},{in:{signal:'life.o2Tank'}},'O₂タンクの残量報告。'),
  node('rep_peak','主バス負荷のピーク','output',{type:'input'},{value:FLOW0*PUMP_KW+1},{},{value:r('input.signal')},{in:{signal:'power.busPeak'}},'ピーク表示器の表示。'),
  node('rep_flow','冷却液流量','output',{type:'input'},{value:FLOW0},{},{value:r('input.signal')},{in:{signal:'thermal.coolantFlowReport'}},'流量計の流量報告。'),
+ node('rep_loop','放熱ループ温度','output',{type:'input'},{value:20},{},{value:r('input.signal')},{in:{signal:'thermal.loopTemperature'}},'放熱ループ温度の表示。'),
+ node('rep_fire','火災警報','output',{type:'input'},{value:0},{},{value:r('input.signal')},{in:{signal:'safety.fireAlarm'}},'船内全体に出る火災警報。'),
  node('mon_temp','機器ラック温度（独立監視）','output',{type:'input'},{value:T0},{},{value:r('input.signal')},{in:{signal:'thermal.rackTemperature'}},'安全監視系が直接読むラック温度。'),
  node('rep_payload','ペイロード状態','output',{type:'input'},{value:0},{},{value:r('input.signal')},{in:{signal:'payload.status'}},'ペイロードの状態報告。'),
  node('rep_o2','O₂生成量','output',{type:'input'},{value:0.5},{},{value:r('input.signal')},{in:{signal:'life.o2Rate'}},'酸素生成装置の生成量報告。'),
@@ -112,7 +140,15 @@ const e=(id:string,from:string,to:string,input:string,signal:string,sourceKey?:s
 export const connections:Connection[]=[
  e('c_mode_payload','ops_payload','payload','mode','ops.payloadMode'),
  e('c_mode_o2','ops_o2','o2gen','mode','ops.o2Mode'),
- e('c_loop_rack','loop_temp','rack','coolant','thermal.loopTemperature'),
+ e('c_env','space_env','radiator','env','env.fluctuation'),
+ e('c_route','ops_route','radiator','route','nav.route'),
+ e('c_loop_rack','radiator','rack','coolant','thermal.loopTemperature'),
+ e('c_loop_nav','radiator','rep_loop','signal','thermal.loopTemperature'),
+ e('c_vent','o2tank','bay_air','vent','life.o2Vent','vent'),
+ e('c_hazard_temp','rack','hazard','temp','thermal.rackTemperature'),
+ e('c_hazard_o2','bay_air','hazard','o2','bay.o2Level'),
+ e('c_hazard_status','payload','hazard','status','payload.status'),
+ e('c_fire','hazard','rep_fire','signal','safety.fireAlarm'),
  e('c_heat','payload','rack','heat','thermal.payloadHeat','heat'),
  e('c_flow','pump','rack','flow','thermal.coolantFlow'),
  e('c_rack_sensor','rack','rack_sensor','temperature','thermal.rackTemperature'),
@@ -141,12 +177,13 @@ export const connections:Connection[]=[
  e('c_flow_report','flow_meter','rep_flow','signal','thermal.coolantFlowReport'),
 ];
 
-export const PAYLOAD='ops_payload.mode',O2='ops_o2.mode',RECORD='ops_record.mode',PEAK='ops_peak.mode';
+export const PAYLOAD='ops_payload.mode',O2='ops_o2.mode',RECORD='ops_record.mode',PEAK='ops_peak.mode',ROUTE='ops_route.mode';
 export const inputs:ManualInput[]=[
  {id:PAYLOAD,nodeId:'ops_payload',parameter:'mode',label:'ペイロード運転指令',description:'0=停止、1=待機、2=実験運転。',min:0,max:2,step:1,defaultValue:0},
  {id:O2,nodeId:'ops_o2',parameter:'mode',label:'O₂生成モード指令',description:'0=通常、1=増産。',min:0,max:1,step:1,defaultValue:0},
  {id:RECORD,nodeId:'ops_record',parameter:'mode',label:'データ記録指令',description:'0=停止、1=記録。',min:0,max:1,step:1,defaultValue:0},
  {id:PEAK,nodeId:'ops_peak',parameter:'mode',label:'ピーク表示モード指令',description:'0=最大値を保持、1=現在値に戻す。',min:0,max:1,step:1,defaultValue:0},
+ {id:ROUTE,nodeId:'ops_route',parameter:'mode',label:'航路指令',description:'0=涼しい航路、1=標準航路、2=暑い航路。',min:0,max:2,step:1,defaultValue:1},
 ];
 for(const n of nodes)if(n.kind==='input'&&!n.externalInput)n.inputParameter='mode';
 
@@ -163,6 +200,7 @@ export const interventions:Intervention[]=[
  edit('o2gen','boostPower','増産時の要求電力（kW）',1,4,0.5,'増産モードで配電盤に求める電力。'),
  edit('payload','trip','熱保護の作動温度（°C）',35,50,0.5,'温度報告がこの値以上になると制限運転に入る。'),
  edit('payload','resume','熱保護の解除温度（°C）',25,45,0.5,'温度報告がこの値以下になると実験運転に戻る。'),
+ edit('bay_air','fan','換気ファンの排出量（%/tick）',0,3,0.1,'機器ベイの酸素を船外へ排出する量。'),
 ];
 
 // Output contracts. Lags count ticks from the tick a command is set on screen.
@@ -180,6 +218,8 @@ export const outputRequirements:Scenario['outputRequirements']=[
  {nodeId:'rep_tank',role:'O₂の備蓄',condition:'全時刻',expected:'20 % 以上 100 % 以下',rules:[range(20,100)]},
  {nodeId:'rep_peak',role:'主バスのピーク',condition:'全時刻',expected:`0 kW 以上 ${BUS_RATING} kW 以下`,rules:[range(0,BUS_RATING)]},
  {nodeId:'rep_flow',role:'冷却液の流量表示',condition:'全時刻',expected:'0 L/min 以上 40 L/min 以下',rules:[range(0,40)]},
+ {nodeId:'rep_loop',role:'放熱ループ温度の表示',condition:'全時刻',expected:'10 °C 以上 40 °C 以下',rules:[range(10,40)]},
+ {nodeId:'rep_fire',role:'火災・爆発なし',condition:'全時刻',expected:'異常なし',rules:[range(0,0)]},
 ];
 
 // Public acceptance cases: loads in both orders, short and long gaps, stop/restart, long runs and seeds.
@@ -191,13 +231,16 @@ export const behaviorCases:BehaviorCase[]=[
  ...[0,3,12,40].map(gap=>({name:`O₂増産の${gap} tick後に実験運転`,steps:200,inputs:[at(4,O2,1),at(4+gap,PAYLOAD,2)]})),
  ...[1,6,40].map(gap=>({name:`実験運転の${gap} tick後にO₂増産`,steps:200,inputs:[at(4,PAYLOAD,2),at(4+gap,O2,1)]})),
  {name:'待機から実験運転へ、途中でO₂増産を止めて再開',steps:240,inputs:[at(2,PAYLOAD,1),at(10,O2,1),at(30,PAYLOAD,2),at(90,O2,0),at(100,O2,1),at(160,PAYLOAD,0),at(170,PAYLOAD,2)]},
+ {name:'暑い航路で実験運転を続ける',steps:200,inputs:[at(0,ROUTE,2),at(4,PAYLOAD,2)]},
+ {name:'涼しい航路で実験運転とO₂増産',steps:160,inputs:[at(0,ROUTE,0),at(4,PAYLOAD,2),at(20,O2,1)]},
+ {name:'O₂増産を長く続けてから実験運転',steps:160,inputs:[at(2,O2,1),at(70,PAYLOAD,2)]},
  {name:'データ記録とピーク表示を操作しながら実験運転',steps:160,inputs:[at(2,PAYLOAD,2),at(4,RECORD,1),at(30,PEAK,1),at(32,PEAK,0),at(60,RECORD,0),at(70,O2,1)]},
  ...[7,99].map(seed=>({name:`放熱ループの揺らぎ（シード${seed}）で両方を同時に開始`,seed,steps:300,inputs:[at(3,PAYLOAD,2),at(3,O2,1)]})),
 ];
 
 /* ---------- presentation hierarchy ---------- */
-const ownership:Record<string,string[]>={sensors:['rack_sensor','bus_meter','flow_meter'],thermal:['rack','cool_ctrl','pump'],life:['o2gen','o2tank'],power:['pdu','peak_meter'],science:['payload','recorder']};
-const labels:Record<string,string>={System:'宇宙船',sensors:'環境計測',thermal:'熱制御',life:'生命維持',power:'配電',science:'科学ペイロード'};
+const ownership:Record<string,string[]>={sensors:['rack_sensor','bus_meter','flow_meter'],thermal:['radiator','rack','cool_ctrl','pump'],life:['o2gen','o2tank'],power:['pdu','peak_meter'],science:['payload','recorder'],safety:['bay_air','hazard']};
+const labels:Record<string,string>={System:'宇宙船',safety:'防災',sensors:'環境計測',thermal:'熱制御',life:'生命維持',power:'配電',science:'科学ペイロード'};
 const systemNodes=nodes.filter(n=>n.kind!=='inner').map(n=>n.id);
 const spec=(rows:[string,string,string][],assumptions:string):ModuleSpec=>({condition:'',expected:'',timing:'',assumptions,relations:[],outputs:rows.map(([portId,expected,timing])=>({portId,condition:'',expected,timing}))});
 const specs:Record<string,ModuleSpec>={
@@ -215,6 +258,7 @@ const specs:Record<string,ModuleSpec>={
   ['out:power.o2Request','通常モードは1 kW、増産モードは4 kWを要求する。','モード指令を受けたtickに要求が変わる。'],
   ['out:life.o2Rate','O₂生成量 = 0.5 L/(min·kW) × 給電許可（要求を上限とする）。','毎tick。'],
   ['out:life.o2Tank','残量 = 前の残量 +（受け取ったO₂生成量 − 船内の消費0.5 L/min）を 0〜100 % に収めた値。','毎tick。'],
+  ['out:life.o2Vent','100 %からあふれた分を逃がし弁から機器ベイへ放出する。','毎tick。'],
  ],'増産は生命維持の余裕を作るための運転で、一般負荷として扱う。'),
  power:spec([
   ['out:power.pumpGrant','冷却ポンプは重要負荷。重要負荷には毎tick、容量5.5 kWの範囲で要求どおり割り当てる。','毎tick。'],
@@ -222,6 +266,9 @@ const specs:Record<string,ModuleSpec>={
   ['out:power.busLoad','主バス負荷 = 割り当てた電力の合計。','毎tick。'],
   ['out:power.busPeak','ピーク表示モードが「最大値を保持」の間は、受け取った主バス負荷の最大値を表示する。「現在値に戻す」の間は受け取った値を表示する。','毎tick。'],
  ],'一般負荷は先着順：毎tick、ほかの一般負荷が前のtickまでに確保した分を除いた空き容量の範囲で割り当てる。確保済みの分は、その機器の要求が下がるまで取り上げない。重要負荷が必要とする分は、一般負荷の割り当てから毎tick差し引く。'),
+ safety:spec([
+  ['out:safety.fireAlarm','機器ラック温度が42 °C以上の状態が3 tick続く（熱暴走）か、機器ベイの酸素濃度が30 %以上のときにペイロードが実験運転を始める（火花）と火災になる。火災が5 tick続くと爆発する。','毎tick。'],
+ ],'換気ファンは、機器ベイの酸素を毎tick 1.5 %ずつ船外へ排出する。O₂タンクがあふれた分は逃がし弁から機器ベイへ放出される。'),
  science:spec([
   ['out:thermal.payloadHeat','実験運転は2 kW、待機は0.5 kW、停止は0 kWの熱を出す。制限運転中は0.5 kW。','毎tick。'],
   ['out:payload.status','温度報告が42 °C以上になると制限運転に入り、36 °C以下に下がると実験運転に戻る。','毎tick。'],
@@ -241,10 +288,10 @@ function modulePorts(id:string):ModulePort[]{
  }
  return ports;
 }
-const systemOutputs:Record<string,string>={mon_temp:'機器ラック温度（独立監視）',rep_payload:'ペイロード状態',rep_o2:'O₂生成量',rep_pump:'冷却ポンプ状態',rep_bus:'主バス負荷',rep_data:'記録済みデータ量',rep_tank:'O₂タンク残量',rep_peak:'主バス負荷のピーク',rep_flow:'冷却液流量'};
+const systemOutputs:Record<string,string>={rep_fire:'火災警報',rep_loop:'放熱ループ温度',mon_temp:'機器ラック温度（独立監視）',rep_payload:'ペイロード状態',rep_o2:'O₂生成量',rep_pump:'冷却ポンプ状態',rep_bus:'主バス負荷',rep_data:'記録済みデータ量',rep_tank:'O₂タンク残量',rep_peak:'主バス負荷のピーク',rep_flow:'冷却液流量'};
 const systemModule:Module={id:'System',label:labels.System,description:'航行中の有人宇宙船。熱制御・生命維持・配電が1本の主バスを共有する。',nodes:systemNodes,children:Object.keys(ownership),
  spec:{condition:'',expected:'',timing:'',assumptions:'時刻は指令を画面で設定したtickから数える。',relations:[],outputs:outputRequirements.map(v=>({portId:v.nodeId,condition:v.condition,expected:v.expected,timing:'',rules:v.rules}))},
- ports:[...inputs.map(i=>port(i.id,i.label,'in',{kind:'control',inputId:i.id},i.description)),port('loop_temp','放熱ループ温度','in',{kind:'source',nodeId:'loop_temp'},'船外環境で揺らぐ。操作できない。'),
+ ports:[...inputs.map(i=>port(i.id,i.label,'in',{kind:'control',inputId:i.id},i.description)),port('space_env','船外環境の揺らぎ','in',{kind:'source',nodeId:'space_env'},'船外環境で揺らぐ。操作できない。'),
   ...Object.entries(systemOutputs).map(([nodeId,label])=>port(nodeId,label,'out',{kind:'output',nodeId}))]};
 const modules:Module[]=[systemModule,...Object.keys(ownership).map(id=>({id,label:labels[id],description:'',nodes:ownership[id],children:[],ports:modulePorts(id),spec:specs[id]}))];
 export const hierarchy:Hierarchy={systemId:'System',roots:['System'],modules,
@@ -257,37 +304,51 @@ export const observations:Observation[]=nodes.map(n=>obs(n.id));
 /* ---------- floor plan ---------- */
 // Where equipment sits. Information flow is not drawn; manuals name what each device receives and sends.
 export const floor:FloorPlan={
- start:'lab',
+ start:'lab',alarm:'rep_fire',
  compartments:[
-  {id:'lab',label:'科学ラボ',access:'crew',role:'科学担当',x:2,y:4,w:23,h:40},
-  {id:'life_room',label:'生命維持室',access:'crew',role:'生命維持担当',x:27,y:4,w:20,h:40},
-  {id:'power_room',label:'電力管理室',access:'crew',role:'電力担当',x:49,y:4,w:20,h:40},
-  {id:'thermal_room',label:'熱管理室',access:'crew',role:'熱制御担当',x:71,y:4,w:20,h:40},
-  {id:'bay',label:'機器ベイ',access:'maintenance',x:2,y:52,w:23,h:44},
-  {id:'life',label:'生命維持機械室',access:'maintenance',x:27,y:52,w:20,h:44},
-  {id:'power',label:'電源室',access:'maintenance',x:49,y:52,w:20,h:44},
-  {id:'thermal',label:'熱制御区画',access:'maintenance',x:71,y:52,w:20,h:44},
+  {id:'nav',label:'航法室',access:'crew',role:'航法担当',x:1,y:4,w:16,h:40},
+  {id:'lab',label:'科学ラボ',access:'crew',role:'科学担当',x:19,y:4,w:19,h:40},
+  {id:'life_room',label:'生命維持室',access:'crew',role:'生命維持担当',x:40,y:4,w:16,h:40},
+  {id:'power_room',label:'電力管理室',access:'crew',role:'電力担当',x:58,y:4,w:16,h:40},
+  {id:'thermal_room',label:'熱管理室',access:'crew',role:'熱制御担当',x:76,y:4,w:16,h:40},
+  {id:'bay',label:'機器ベイ',access:'maintenance',x:1,y:52,w:37,h:44},
+  {id:'life',label:'生命維持機械室',access:'maintenance',x:40,y:52,w:16,h:44},
+  {id:'power',label:'電源室',access:'maintenance',x:58,y:52,w:16,h:44},
+  {id:'thermal',label:'熱制御区画',access:'maintenance',x:76,y:52,w:16,h:44},
   {id:'outside',label:'船外',access:'outside',x:96,y:20,w:0,h:60,outside:true},
  ],
- displays:{rep_payload:'lab',rep_data:'lab',rep_o2:'life_room',rep_tank:'life_room',rep_bus:'power_room',rep_peak:'power_room',mon_temp:'thermal_room',rep_pump:'thermal_room',rep_flow:'thermal_room'},
+ voices:[
+  {room:'nav',nodeId:'rep_loop',atLeast:24,text:'今日の航路、外がだいぶ暑いね。'},
+  {room:'lab',nodeId:'rep_payload',atLeast:3,text:'熱保護で止まっちゃった！ データが……'},
+  {room:'life_room',nodeId:'rep_tank',atLeast:100,text:'タンクがずっと満タンなんだけど、あふれた酸素ってどこに行くの？'},
+  {room:'power_room',nodeId:'rep_bus',atLeast:5.5,text:'主バスが定格ぴったりで張り付いてる……'},
+  {room:'thermal_room',nodeId:'mon_temp',atLeast:38,text:'ちょっと暑くない？'},
+  {room:'thermal_room',nodeId:'mon_temp',atLeast:40,text:'ラックが40 °Cを超えてる！ ポンプは運転中なのに！'},
+  ...['nav','lab','life_room','power_room','thermal_room'].map(room=>({room,nodeId:'rep_fire',atLeast:1,text:'火事だ！ 脱出ポッドはどこ！？'})),
+ ],
+ displays:{rep_loop:'nav',rep_payload:'lab',rep_data:'lab',rep_o2:'life_room',rep_tank:'life_room',rep_bus:'power_room',rep_peak:'power_room',mon_temp:'thermal_room',rep_pump:'thermal_room',rep_flow:'thermal_room'},
  devices:[
-  {nodeId:'ops_payload',label:'ペイロード運転卓',compartment:'lab',x:4,y:10,icon:'⌨',manual:['クルーがペイロードの運転モード（停止・待機・実験運転）を指令する操作卓。指令は科学ペイロードに送られる。']},
-  {nodeId:'ops_record',label:'データ記録卓',compartment:'lab',x:4,y:26,icon:'⌨',manual:['科学担当のクルーが実験データの記録（停止・記録）を指令する操作卓。指令はデータレコーダーに送られる。']},
-  {nodeId:'ops_o2',label:'生命維持操作卓',compartment:'life_room',x:29,y:10,icon:'⌨',manual:['クルーがO₂生成装置の生成モード（通常・増産）を指令する操作卓。指令はO₂生成装置に送られる。']},
-  {nodeId:'ops_peak',label:'ピーク表示操作卓',compartment:'power_room',x:51,y:10,icon:'⌨',manual:['電力担当のクルーがピーク表示器のモード（最大値を保持・現在値に戻す）を指令する操作卓。']},
-  {nodeId:'rack',compartment:'bay',x:4,y:58,icon:'▤',manual:['電子機器を収めたラック。電子機器は常に1 kWの熱を出し、科学ペイロードの熱も加わる。','冷却液が熱を運び出す。温度の変化 = 0.4 ×（1 kW + ペイロード発熱 − 0.01 × 冷却液流量 ×（ラック温度 − 放熱ループ温度））。','独立した安全監視系が、ラックの温度を直接読んでクルーに表示する。'],properties:{interval:'計算周期（tick）',baseHeat:'電子機器の発熱（kW）',heatCapacity:'温度変化の係数',transfer:'冷却液の熱交換係数'}},
-  {nodeId:'rack_sensor',compartment:'bay',x:14,y:58,icon:'◔',manual:['ラック温度センサー。4 tickごとにラックの温度を計測し、計測報告を冷却制御と科学ペイロードに送る。','報告には計測した時刻が付く。受け取った機器は、次の報告が届くまで前の報告を使う。'],properties:{interval:'報告周期（tick）',offset:'校正オフセット（°C）'}},
-  {nodeId:'payload',compartment:'bay',x:4,y:78,icon:'✦',manual:['科学ペイロード。運転指令に従い、実験運転で2 kW、待機で0.5 kWの熱をラックに出す。','熱保護：温度センサーの報告が42 °C以上で制限運転（0.5 kW）に入り、36 °C以下で実験運転に戻る。','実際の運転状態をクルーに報告する。'],properties:{interval:'計算周期（tick）',trip:'熱保護の作動温度（°C）',resume:'熱保護の解除温度（°C）',fullHeat:'実験運転の発熱（kW）',standbyHeat:'待機・制限運転の発熱（kW）',limited:'熱保護で制限運転中（1=制限中）'}},
-  {nodeId:'recorder',compartment:'bay',x:14,y:78,icon:'▣',manual:['データレコーダー。データ記録指令が「記録」で、ペイロードが実験運転していれば、毎tick 1 MBの実験データを記録する。','記録済みデータ量を科学ラボに報告する。'],properties:{interval:'計算周期（tick）',rate:'1 tickあたりの記録量（MB）'}},
-  {nodeId:'o2gen',compartment:'life',x:29,y:58,icon:'◎',manual:['O₂生成装置。生成モード指令に従い、通常は1 kW、増産は4 kWの電力を配電盤に要求する。','給電許可を受けた電力1 kWあたり0.5 L/minの酸素を生成し、生成量をクルーに報告する。','増産は生命維持の余裕を作るための運転で、配電上は一般負荷。'],properties:{interval:'計算周期（tick）',normalPower:'通常時の要求電力（kW）',boostPower:'増産時の要求電力（kW）',yield:'1 kWあたりの酸素生成量（L/min）'}},
-  {nodeId:'o2tank',compartment:'life',x:29,y:78,icon:'◍',manual:['O₂タンク。生成されたO₂をため、船内の消費（0.5 L/min）を差し引く。','残量を0〜100 %で生命維持室に報告する。'],properties:{interval:'計算周期（tick）',use:'船内のO₂消費（L/min）',gain:'1 L/minあたりの残量の変化（%/tick）'}},
-  {nodeId:'pdu',compartment:'power',x:51,y:58,icon:'⚡',manual:['配電盤。主バスの容量は5.5 kW。冷却ポンプとO₂生成装置から電力要求を受け、それぞれに給電許可を返す。','冷却ポンプは重要負荷。重要負荷には毎tick、容量の範囲で要求どおり割り当てる。','一般負荷（O₂生成装置）には重要負荷の残りを割り当てる。一般負荷どうしは先着順で、確保済みの分は取り上げない。','割り当ての合計（主バス負荷）を電力計に送る。'],properties:{interval:'計算周期（tick）',capacity:'割り当て容量（kW）',pumpEssential:'冷却ポンプの負荷区分（1=重要負荷、0=一般負荷）'}},
-  {nodeId:'bus_meter',compartment:'power',x:51,y:78,icon:'◫',manual:['主バス電力計。2 tickごとに主バス負荷を計測し、電力管理室とピーク表示器に報告する。'],properties:{interval:'計測周期（tick）'}},
-  {nodeId:'peak_meter',compartment:'power',x:60,y:78,icon:'⇡',manual:['ピーク表示器。主バス電力計の報告を受け、モードが「最大値を保持」の間は最大値を、「現在値に戻す」の間は受け取った値を電力管理室に表示する。'],properties:{interval:'計算周期（tick）'}},
-  {nodeId:'cool_ctrl',compartment:'thermal',x:73,y:58,icon:'⌬',manual:['冷却制御。受け取った温度報告から冷却流量指令を決め、冷却ポンプに送る。','冷却流量指令 = 10 + 5 ×（温度報告 − 30 °C）を 10〜30 L/min に収めた値。'],properties:{interval:'計算周期（tick）',minFlow:'最低流量（L/min）',maxFlow:'最大流量（L/min）',setpoint:'目標温度（°C）',gain:'制御ゲイン（L/min per °C）'}},
-  {nodeId:'pump',compartment:'thermal',x:73,y:74,icon:'⟳',manual:['冷却ポンプ。冷却流量指令に必要な電力（1 L/minあたり0.125 kW）を配電盤に要求する。','指令流量と、給電許可で出せる流量（許可 ÷ 0.125）の小さいほうの冷却液をラックへ流す。','流量指令を受けている間は「運転中」をクルーに報告する。','目安：発熱3 kW、放熱ループ温度20 °Cでは、約24 L/min（約3 kW）で釣り合う。'],properties:{interval:'計算周期（tick）',kwPerFlow:'1 L/minあたりの必要電力（kW）'}},
-  {nodeId:'flow_meter',compartment:'thermal',x:83,y:86,icon:'≋',manual:['冷却液流量計。2 tickごとに冷却ポンプが流している冷却液の流量を計測し、熱管理室に報告する。'],properties:{interval:'計測周期（tick）'}},
-  {nodeId:'loop_temp',label:'放熱器',compartment:'outside',x:92,y:40,icon:'❄',manual:['放熱器。冷却液は船外の放熱器を通ってラックに戻る。戻りの温度（放熱ループ温度）は船外環境で18〜22 °Cの間を揺らぐ。操作できない。']},
+  {nodeId:'ops_payload',label:'ペイロード運転卓',compartment:'lab',x:21,y:10,icon:'⌨',manual:['クルーがペイロードの運転モード（停止・待機・実験運転）を指令する操作卓。指令は科学ペイロードに送られる。']},
+  {nodeId:'ops_record',label:'データ記録卓',compartment:'lab',x:21,y:26,icon:'⌨',manual:['科学担当のクルーが実験データの記録（停止・記録）を指令する操作卓。指令はデータレコーダーに送られる。']},
+  {nodeId:'ops_o2',label:'生命維持操作卓',compartment:'life_room',x:42,y:10,icon:'⌨',manual:['クルーがO₂生成装置の生成モード（通常・増産）を指令する操作卓。指令はO₂生成装置に送られる。']},
+  {nodeId:'ops_peak',label:'ピーク表示操作卓',compartment:'power_room',x:60,y:10,icon:'⌨',manual:['電力担当のクルーがピーク表示器のモード（最大値を保持・現在値に戻す）を指令する操作卓。']},
+  {nodeId:'rack',compartment:'bay',x:3,y:58,icon:'▤',manual:['電子機器を収めたラック。電子機器は常に1 kWの熱を出し、科学ペイロードの熱も加わる。','冷却液が熱を運び出す。温度の変化 = 0.4 ×（1 kW + ペイロード発熱 − 0.01 × 冷却液流量 ×（ラック温度 − 放熱ループ温度））。','独立した安全監視系が、ラックの温度を直接読んでクルーに表示する。'],properties:{interval:'計算周期（tick）',baseHeat:'電子機器の発熱（kW）',heatCapacity:'温度変化の係数',transfer:'冷却液の熱交換係数'}},
+  {nodeId:'rack_sensor',compartment:'bay',x:12,y:58,icon:'◔',manual:['ラック温度センサー。4 tickごとにラックの温度を計測し、計測報告を冷却制御と科学ペイロードに送る。','報告には計測した時刻が付く。受け取った機器は、次の報告が届くまで前の報告を使う。'],properties:{interval:'報告周期（tick）',offset:'校正オフセット（°C）'}},
+  {nodeId:'payload',compartment:'bay',x:3,y:76,icon:'✦',manual:['科学ペイロード。運転指令に従い、実験運転で2 kW、待機で0.5 kWの熱をラックに出す。','熱保護：温度センサーの報告が42 °C以上で制限運転（0.5 kW）に入り、36 °C以下で実験運転に戻る。','実際の運転状態をクルーに報告する。'],properties:{interval:'計算周期（tick）',trip:'熱保護の作動温度（°C）',resume:'熱保護の解除温度（°C）',fullHeat:'実験運転の発熱（kW）',standbyHeat:'待機・制限運転の発熱（kW）',limited:'熱保護で制限運転中（1=制限中）'}},
+  {nodeId:'recorder',compartment:'bay',x:12,y:76,icon:'▣',manual:['データレコーダー。データ記録指令が「記録」で、ペイロードが実験運転していれば、毎tick 1 MBの実験データを記録する。','記録済みデータ量を科学ラボに報告する。'],properties:{interval:'計算周期（tick）',rate:'1 tickあたりの記録量（MB）'}},
+  {nodeId:'o2gen',compartment:'life',x:42,y:58,icon:'◎',manual:['O₂生成装置。生成モード指令に従い、通常は1 kW、増産は4 kWの電力を配電盤に要求する。','給電許可を受けた電力1 kWあたり0.5 L/minの酸素を生成し、生成量をクルーに報告する。','増産は生命維持の余裕を作るための運転で、配電上は一般負荷。'],properties:{interval:'計算周期（tick）',normalPower:'通常時の要求電力（kW）',boostPower:'増産時の要求電力（kW）',yield:'1 kWあたりの酸素生成量（L/min）'}},
+  {nodeId:'o2tank',compartment:'life',x:42,y:76,icon:'◍',manual:['O₂タンク。生成されたO₂をため、船内の消費（0.5 L/min）を差し引く。','残量を0〜100 %で生命維持室に報告する。満杯のときは、あふれた分を逃がし弁から機器ベイへ放出する。'],properties:{interval:'計算周期（tick）',use:'船内のO₂消費（L/min）',gain:'1 L/minあたりの残量の変化（%/tick）'}},
+  {nodeId:'pdu',compartment:'power',x:60,y:58,icon:'⚡',manual:['配電盤。主バスの容量は5.5 kW。冷却ポンプとO₂生成装置から電力要求を受け、それぞれに給電許可を返す。','冷却ポンプは重要負荷。重要負荷には毎tick、容量の範囲で要求どおり割り当てる。','一般負荷（O₂生成装置）には重要負荷の残りを割り当てる。一般負荷どうしは先着順で、確保済みの分は取り上げない。','割り当ての合計（主バス負荷）を電力計に送る。'],properties:{interval:'計算周期（tick）',capacity:'割り当て容量（kW）',pumpEssential:'冷却ポンプの負荷区分（1=重要負荷、0=一般負荷）'}},
+  {nodeId:'bus_meter',compartment:'power',x:60,y:76,icon:'◫',manual:['主バス電力計。2 tickごとに主バス負荷を計測し、電力管理室とピーク表示器に報告する。'],properties:{interval:'計測周期（tick）'}},
+  {nodeId:'peak_meter',compartment:'power',x:67,y:86,icon:'⇡',manual:['ピーク表示器。主バス電力計の報告を受け、モードが「最大値を保持」の間は最大値を、「現在値に戻す」の間は受け取った値を電力管理室に表示する。'],properties:{interval:'計算周期（tick）'}},
+  {nodeId:'cool_ctrl',compartment:'thermal',x:78,y:58,icon:'⌬',manual:['冷却制御。受け取った温度報告から冷却流量指令を決め、冷却ポンプに送る。','冷却流量指令 = 10 + 5 ×（温度報告 − 30 °C）を 10〜30 L/min に収めた値。'],properties:{interval:'計算周期（tick）',minFlow:'最低流量（L/min）',maxFlow:'最大流量（L/min）',setpoint:'目標温度（°C）',gain:'制御ゲイン（L/min per °C）'}},
+  {nodeId:'pump',compartment:'thermal',x:78,y:72,icon:'⟳',manual:['冷却ポンプ。冷却流量指令に必要な電力（1 L/minあたり0.125 kW）を配電盤に要求する。','指令流量と、給電許可で出せる流量（許可 ÷ 0.125）の小さいほうの冷却液をラックへ流す。','流量指令を受けている間は「運転中」をクルーに報告する。','目安：発熱3 kW、放熱ループ温度20 °Cでは、約24 L/min（約3 kW）で釣り合う。'],properties:{interval:'計算周期（tick）',kwPerFlow:'1 L/minあたりの必要電力（kW）'}},
+  {nodeId:'flow_meter',compartment:'thermal',x:84,y:86,icon:'≋',manual:['冷却液流量計。2 tickごとに冷却ポンプが流している冷却液の流量を計測し、熱管理室に報告する。'],properties:{interval:'計測周期（tick）'}},
+  {nodeId:'ops_route',label:'航路操作卓',compartment:'nav',x:3,y:12,icon:'⌨',manual:['航法担当のクルーが航路（涼しい航路・標準航路・暑い航路）を選ぶ操作卓。航路によって船外の温度が変わる。']},
+  {nodeId:'bay_air',compartment:'bay',x:21,y:58,icon:'✣',manual:['機器ベイの換気ファン。機器ベイの空気を毎tick 1.5 %ずつ船外へ排出する。','O₂タンクが満杯になると、逃がし弁があふれた酸素を機器ベイへ放出する（コスト削減のための仕様）。換気ファンがそれを船外へ出す。'],properties:{interval:'計算周期（tick）',fan:'換気ファンの排出量（%/tick）',value:'機器ベイの酸素濃度（%）'}},
+  {nodeId:'hazard',compartment:'bay',x:21,y:76,icon:'⚠',manual:['防災監視。機器ラック温度が42 °C以上の状態が3 tick続くと熱暴走で発火する。機器ベイの酸素濃度が30 %以上のときにペイロードが実験運転を始めると、起動時の火花で引火する。','火災が5 tick続くと、船は爆発する。警報は船内全体に出る。'],properties:{interval:'計算周期（tick）',ignition:'熱暴走の温度（°C）',hotTicks:'熱暴走までの tick 数',o2Limit:'引火する酸素濃度（%）',burnTicks:'爆発までの tick 数',hot:'42 °C以上が続いている tick 数',running:'ペイロードが実験運転中（1）',fire:'火災が続いている tick 数',cause:'火災の原因（1=熱暴走、2=火花）',exploded:'爆発した（1）'}},
+  {nodeId:'radiator',compartment:'outside',x:92,y:30,icon:'❄',manual:['放熱器。冷却液は船外の放熱器を通ってラックに戻る。戻りの温度（放熱ループ温度）は、航路の基準温度（涼しい16 °C・標準18 °C・暑い22 °C）に、船外環境の揺らぎ0〜4 °Cを加えた値。'],properties:{interval:'計算周期（tick）',cool:'涼しい航路の基準温度（°C）',standard:'標準航路の基準温度（°C）',hot:'暑い航路の基準温度（°C）'}},
+  {nodeId:'space_env',label:'船外環境',compartment:'outside',x:92,y:56,icon:'☄',manual:['船外環境。放熱器の温度を0〜4 °Cの範囲で揺らす。操作できない。']},
  ]};
 
 export type ShipSystem=Pick<Scenario,'floor'|'signals'|'nodes'|'connections'|'inputs'|'interventions'|'observations'|'visibleNodeIds'|'visibleConnectionIds'|'outputRequirements'|'behaviorCases'|'hierarchy'>;

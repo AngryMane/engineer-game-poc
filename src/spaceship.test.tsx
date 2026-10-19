@@ -2,6 +2,9 @@ import {describe,it,expect} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {createWorld,step,setInput,intervene,validate,validateBehavior,type Scenario,type World} from './engine';
 import {shipScenario,designerRuns,SHIP_SCENARIO_ID} from './spaceship';
+import {ROUTE} from './spaceship/system';
+import {terminated} from './engine';
+import {runToEnd,startPlayback} from './experiment';
 import {PAYLOAD,O2} from './spaceship/system';
 import {formatValue,messageText,lastMessage} from './signals';
 import {reportObservations} from './faultReports';
@@ -10,11 +13,13 @@ import {readHierarchySession,hierarchySample,SHIP_SAVE_KEY,HIERARCHY_SAVE_KEY,sa
 import {HierarchyPlay} from './HierarchyPlay';
 import {App} from './App';
 import {caseScenarios} from './cases';
-import {canEnter,channelKey,displaysIn} from './floorPlan';
+import {canEnter,channelKey,displaysIn,voicesIn} from './floorPlan';
 import {ShipFloor,ShipDevicePanel} from './ShipFloor';
 
 const T=120000;
-const faulty=shipScenario(true),healthy=shipScenario(false);
+const faulty=shipScenario(true),healthy=shipScenario(false),onlyA=shipScenario(['A']),onlyB=shipScenario(['B']),onlyC=shipScenario(['C']);
+/** Direct repairs of all three faults. */
+const FIX={'pdu.pumpEssential':1,'bay_air.fan':1.5,'cool_ctrl.maxFlow':30};
 type Input={time:number;id:string;value:number};
 function run(s:Scenario,inputs:Input[],ticks:number,patch:Record<string,number>={},onTick?:(w:World)=>void){
  let w=createWorld(s);for(const [key,value]of Object.entries(patch)){const [node,parameter]=key.split('.');w.parameters[node][parameter]=value;}
@@ -70,61 +75,63 @@ describe('healthy ship',()=>{
  });
 });
 
-describe('fault case: cooling falls short while the pump reports normal',()=>{
+describe('fault A: cooling falls short while the pump reports normal',()=>{
  it('the reproduction sequence first caps the pump grant, then the temperature fails much later, then the payload limits itself',()=>{
   let capped:number|undefined;
-  const w=run(faulty,designerRuns.reproduce,80,{},w=>{if(capped===undefined&&w.states.pump.request>w.states.pdu.pumpGrant+0.5)capped=w.time;});
+  const w=run(onlyA,designerRuns.reproduce,80,{},w=>{if(capped===undefined&&w.states.pump.request>w.states.pdu.pumpGrant+0.5)capped=w.time;});
   const temp=w.monitor.logs.find(l=>l.nodeId==='mon_temp')!.time,limit=w.monitor.logs.find(l=>l.nodeId==='rep_payload')!.time;
-  expect(capped).toBeDefined();expect(temp-capped!).toBeGreaterThanOrEqual(15);expect(limit).toBeGreaterThan(temp);
+  expect(capped).toBeDefined();expect(temp-capped!).toBeGreaterThanOrEqual(10);expect(limit).toBeGreaterThan(temp);
   expect(w.states.pdu.pumpGrant).toBeCloseTo(1.5);expect(w.states.pump.request).toBeCloseTo(3.75);
   // The pump status never changes: it reports that it is running on command.
   expect(w.monitor.logs.some(l=>l.nodeId==='rep_pump')).toBe(false);
  });
  it('is deterministic: the same sequence gives the same internal and final symptoms',()=>{
-  const a=run(faulty,designerRuns.reproduce,120),b=run(faulty,designerRuns.reproduce,120);
+  const a=run(onlyA,designerRuns.reproduce,120),b=run(onlyA,designerRuns.reproduce,120);
   expect(onsets(a)).toEqual(onsets(b));expect(a.states).toEqual(b.states);expect(a.messages).toEqual(b.messages);
  });
  it('the control sequence changes one condition (the boost is later) and shows no anomaly',()=>{
-  const w=run(faulty,designerRuns.control,200);expect(onsets(w)).toEqual([]);
+  const w=run(onlyA,designerRuns.control,200);expect(onsets(w)).toEqual([]);
   expect(designerRuns.control.filter((x,i)=>JSON.stringify(x)!==JSON.stringify(designerRuns.reproduce[i])).map(x=>x.id)).toEqual([O2]);
  });
  it('boost first fails at every gap; the window after the experiment starts is short',()=>{
-  for(const gap of [0,10,40])expect(onsets(run(faulty,[{time:4,id:O2,value:1},{time:4+gap,id:PAYLOAD,value:2}],200)).length,`gap ${gap}`).toBeGreaterThan(0);
-  for(const gap of [0,4])expect(onsets(run(faulty,[{time:8,id:PAYLOAD,value:2},{time:8+gap,id:O2,value:1}],200)).length,`gap ${gap}`).toBeGreaterThan(0);
-  for(const gap of [10,30])expect(onsets(run(faulty,[{time:8,id:PAYLOAD,value:2},{time:8+gap,id:O2,value:1}],200)),`gap ${gap}`).toEqual([]);
+  for(const gap of [0,10,40])expect(onsets(run(onlyA,[{time:4,id:O2,value:1},{time:4+gap,id:PAYLOAD,value:2}],200)).length,`gap ${gap}`).toBeGreaterThan(0);
+  for(const gap of [0,4])expect(onsets(run(onlyA,[{time:8,id:PAYLOAD,value:2},{time:8+gap,id:O2,value:1}],200)).length,`gap ${gap}`).toBeGreaterThan(0);
+  for(const gap of [10,30])expect(onsets(run(onlyA,[{time:8,id:PAYLOAD,value:2},{time:8+gap,id:O2,value:1}],200)),`gap ${gap}`).toEqual([]);
  });
  it('message history supports the hypothesis: the bad day gets more O₂ and a smaller pump grant than the good day',()=>{
-  const bad=run(faulty,designerRuns.reproduce,60),good=run(faulty,designerRuns.control,60);
+  const bad=run(onlyA,designerRuns.reproduce,60),good=run(onlyA,designerRuns.control,60);
   expect(lastMessage(bad,'c_o2_rate')!.value).toBeCloseTo(2);expect(lastMessage(good,'c_o2_rate')!.value).toBeLessThan(1.5);
   expect(lastMessage(bad,'c_pump_grant')!.value).toBeLessThan(lastMessage(good,'c_pump_grant')!.value);
  });
  it('a faster temperature sensor does not fix it, so the stale report is not the main cause',()=>{
-  expect(onsets(run(faulty,designerRuns.reproduce,80,{'rack_sensor.interval':1})).length).toBeGreaterThan(0);
+  expect(onsets(run(onlyA,designerRuns.reproduce,80,{'rack_sensor.interval':1})).length).toBeGreaterThan(0);
  });
  it('fails public cases before repair',()=>{expect(validateBehavior(faulty,createWorld(faulty)).passed).toBe(false);},T);
  it.each([
   ['direct: pump back to an essential load',{'pdu.pumpEssential':1}],
   ['alternative: lower O₂ boost power',{'o2gen.boostPower':3}],
   ['alternative: higher minimum flow reserves pump power first',{'cool_ctrl.minFlow':20}],
- ])('accepts %s',(_,patch)=>{expect(check(faulty,patch)).toMatchObject({passed:true});},T);
+ ])('accepts %s',(_,patch)=>{const p:Record<string,number>={...FIX,...patch};if(!('pdu.pumpEssential' in patch))delete p['pdu.pumpEssential'];expect(check(faulty,p)).toMatchObject({passed:true});},T);
  it.each([
   ['allocating above the bus rating',{'pdu.capacity':7}],
   ['raising the thermal trip',{'payload.trip':50}],
   ['offsetting the temperature sensor',{'rack_sensor.offset':-5}],
   ['a faster sensor only',{'rack_sensor.interval':1}],
   ['a higher controller gain',{'cool_ctrl.gain':10}],
- ])('rejects %s',(_,patch)=>{expect(check(faulty,patch).passed).toBe(false);},T);
+ ])('rejects %s',(_,patch)=>{const p:Record<string,number>={...FIX,...patch};delete p['pdu.pumpEssential'];expect(check(faulty,p).passed).toBe(false);},T);
  it('a manual repair made in play is used by verification and clears the case',()=>{
-  let w=intervene(faulty,createWorld(faulty),'pdu.pumpEssential',1,'repair');
+  let w=createWorld(faulty);for(const [id,v] of Object.entries(FIX))w=intervene(faulty,w,id,v,'repair');
   for(let i=0;i<40&&!w.verification.cleared;i++)w=step(faulty,w);
   expect(w.edits[0]).toMatchObject({purpose:'repair',target:'pdu'});expect(w.verification.cleared).toBe(true);
  },T);
  it('reports contain observed facts only, sampled from the hidden runs',()=>{
   for(const report of faulty.reports!){const obs=reportObservations(faulty,report);expect(obs.length).toBe(report.entries.length);}
-  const r1=reportObservations(faulty,faulty.reports![0]);expect(r1[2].values.rep_payload).toBe(3);expect(r1[2].values.rep_data).toBe(r1[1].values.rep_data+6);
-  const r3=reportObservations(faulty,faulty.reports![2]);expect(r3[0].values.mon_temp).toBeGreaterThan(40);expect(r3[0].values.rep_flow).toBeLessThan(r3[1].values.rep_flow-5);
+  const r1=reportObservations(faulty,faulty.reports![0]);expect(r1[2].values.rep_payload).toBe(3);expect(r1[2].values.rep_fire).toBe(1);
+  const r2=reportObservations(faulty,faulty.reports![1]);expect(r2[1].values.mon_temp).toBeGreaterThan(40);expect(r2[1].values.rep_flow).toBe(12);
+  const r5=reportObservations(faulty,faulty.reports![4]);expect(r5[1].values.rep_fire).toBe(1);
+  const r7=reportObservations(faulty,faulty.reports![6]);expect(r7[1].values.rep_flow).toBe(16);
   // Each crew member reports only what the screens and consoles in their own room show.
-  for(const report of faulty.reports!){const role=report.from.match(/（(.+)）/)![1],room=faulty.floor!.compartments.find(c=>c.role===role)!.id;for(const e of report.entries)for(const id of e.ids!){const node=faulty.inputs.find(i=>i.id===id)?.nodeId??id;expect(faulty.floor!.displays[node]??faulty.floor!.devices.find(d=>d.nodeId===node)!.compartment,`${report.id} ${id}`).toBe(room);}}
+  for(const report of faulty.reports!){const role=report.from.match(/（(.+)）/)![1],room=faulty.floor!.compartments.find(c=>c.role===role)!.id;for(const e of report.entries)for(const id of e.ids!){const node=faulty.inputs.find(i=>i.id===id)?.nodeId??id;if(node===faulty.floor!.alarm)continue;expect(faulty.floor!.displays[node]??faulty.floor!.devices.find(d=>d.nodeId===node)!.compartment,`${report.id} ${id}`).toBe(room);}}
   const text=JSON.stringify(faulty.reports)+faulty.symptom+faulty.briefing.firstAction;
   for(const spoiler of ['一般負荷','pumpEssential','負荷区分','先着'])expect(text).not.toContain(spoiler);
  });
@@ -152,7 +159,7 @@ describe('ship play screen, experiments and saves',()=>{
  });
  it('the main screen is the ship, with run controls only and a message log tab',()=>{
   const html=renderToStaticMarkup(<App/>);
-  expect(html).toContain('宇宙船 / 冷却が足りないのに、ポンプは正常を報告する');expect(html).toContain('>Messages<');
+  expect(html).toContain('宇宙船 / カナリア級の連続爆発');expect(html).toContain('本日の爆発：0 隻');expect(html).toContain('>Messages<');
   expect(html).not.toMatch(/>\+\d+</);expect(html).toContain('>Run<');
   // The game starts in the science lab: only its screens are shown.
   expect(html).toContain('科学ラボの表示');expect(html).toContain('記録済みデータ量');expect(html).not.toContain('冷却ポンプ状態</h3>');
@@ -186,7 +193,9 @@ describe('ship floor plan: what the player sees first',()=>{
   const c=structuredClone(faulty);c.floor!.devices.find(d=>d.nodeId==='pdu')!.compartment='power_room';expect(()=>validate(c)).toThrow(/区画が不正/);
   const d=structuredClone(faulty);d.floor!.devices.find(d=>d.nodeId==='ops_o2')!.compartment='life';expect(()=>validate(d)).toThrow(/区画が不正/);
   // Every crew role has its own console or screens; the mechanic can enter every room but outside.
-  for(const room of faulty.floor!.compartments.filter(c=>c.access==='crew'))expect(displaysIn(faulty,room.id).length,room.id).toBeGreaterThan(0);
+  for(const room of faulty.floor!.compartments.filter(c=>c.access==='crew'))expect(displaysIn(faulty,room.id).filter(id=>id!==faulty.floor!.alarm).length,room.id).toBeGreaterThan(0);
+  // The fire alarm is heard everywhere, maintenance areas included.
+  for(const room of faulty.floor!.compartments.filter(c=>c.access!=='outside'))expect(displaysIn(faulty,room.id)).toContain('rep_fire');
   expect(faulty.floor!.compartments.filter(c=>canEnter(faulty,c.id)).map(c=>c.id)).not.toContain('outside');
  });
  it('every computing device is placed, and the plan is validated with the scenario',()=>{
@@ -207,9 +216,49 @@ describe('ship floor plan: what the player sees first',()=>{
  it('internal state that is not sent anywhere is listed as a property, and command consoles show the crew command as their input',()=>{
   const payload=panel('payload');expect(payload.slice(payload.indexOf('プロパティ（'))).toContain('熱保護で制限運転中');
   const console=panel('ops_payload');expect(console.slice(console.indexOf('入力（'),console.indexOf('出力（'))).toContain('クルーの操作');expect(console).toContain('プロパティはありません');
-  expect(panel('loop_temp')).toContain('船外環境（操作できない）');
+  expect(panel('space_env')).toContain('船外環境（操作できない）');
  });
  it('timeline samples keep every connection, so a device\'s inputs and outputs can be charted, also for replays',()=>{
   const w=run(faulty,designerRuns.reproduce,30);expect(hierarchySample(faulty,w).values[channelKey('c_pump_grant')]).toBeCloseTo(1.5);
  });
+});
+
+describe('same-class ships: three faults, three ways to explode',()=>{
+ const at=(time:number,id:string,value:number)=>({time,id,value});
+ const voyage=(s:Scenario,inputs:Input[],ticks=250)=>{let w=createWorld(s);for(let t=0;t<ticks&&!terminated(s,w);t++){for(const i of inputs.filter(i=>i.time===w.time))w=setInput(s,w,i.id,i.value);w=step(s,w,false);}return w;};
+ const outcome=(w:World)=>w.states.hazard.exploded?`${w.states.hazard.cause===1?'heat':'spark'}@${w.time}`:'port';
+ it('a healthy ship never catches fire, on any route and in any order',()=>{
+  for(const inputs of Object.values(designerRuns))expect(outcome(voyage(healthy,inputs)),JSON.stringify(inputs)).toBe('port');
+  for(const route of [0,1,2])expect(outcome(voyage(healthy,[at(0,ROUTE,route),at(2,O2,1),at(70,PAYLOAD,2)])),`route ${route}`).toBe('port');
+ },T);
+ it('each fault explodes only under its own conditions, and in its own way',()=>{
+  expect(outcome(voyage(onlyA,designerRuns.reproduce))).toMatch(/^heat@/);expect(outcome(voyage(onlyA,designerRuns.control))).toBe('port');expect(outcome(voyage(onlyA,designerRuns.hotRoute))).toBe('port');
+  expect(outcome(voyage(onlyB,designerRuns.ventSpark))).toMatch(/^spark@/);for(const day of ['reproduce','control','boostFirst','hotRoute'] as const)expect(outcome(voyage(onlyB,designerRuns[day])),day).toBe('port');
+  expect(outcome(voyage(onlyC,designerRuns.hotRoute))).toMatch(/^heat@/);for(const day of ['reproduce','control','ventSpark'] as const)expect(outcome(voyage(onlyC,designerRuns[day])),day).toBe('port');
+ },T);
+ it('with all three faults, every reported day explodes first by its own cause',()=>{
+  expect(outcome(voyage(faulty,designerRuns.reproduce))).toMatch(/^heat@5\d$/);
+  const b=voyage(faulty,designerRuns.ventSpark);expect(outcome(b)).toMatch(/^spark@6\d$/);expect(b.states.bay_air.value).toBeGreaterThanOrEqual(30);
+  expect(outcome(voyage(faulty,designerRuns.hotRoute))).toMatch(/^heat@/);expect(outcome(voyage(faulty,designerRuns.control))).toBe('port');
+ },T);
+ it('repairing one fault can still leave the same voyage exploding, later and for another reason',()=>{
+  const s=structuredClone(faulty);s.faults=s.faults.filter(f=>f.targetId!=='bay_air');
+  expect(outcome(voyage(s,designerRuns.ventSpark))).toMatch(/^heat@/);
+ },T);
+ it('each fault alone fails the public cases; all direct repairs pass; leaving one out fails',()=>{
+  for(const s of [onlyA,onlyB,onlyC])expect(validateBehavior(s,createWorld(s)).passed,s.id).toBe(false);
+  expect(check(faulty,FIX)).toMatchObject({passed:true});
+  for(const key of Object.keys(FIX)){const p:Record<string,number>={...FIX};delete p[key];expect(check(faulty,p).passed,key).toBe(false);}
+ },T);
+ it('an exploded voyage stops there, and its outcome names the cause',()=>{
+  const ops:Operation[]=designerRuns.reproduce.map(i=>({atTick:i.time,kind:'setInput',target:i.id,value:i.value}));
+  const pb=runToEnd(faulty,startPlayback(faulty,createWorld(faulty),ops,200));
+  expect(pb.status).toBe('completed');expect(pb.terminatedAt).toBeLessThan(60);expect(pb.world.time).toBe(pb.terminatedAt);
+  expect(runExperiment(faulty,setupFor(faulty,createWorld(faulty)),ops,200)).toMatchObject({terminatedAt:pb.terminatedAt,terminalCause:'機器ベイの熱暴走'});
+  let live=startLive(faulty,pb.world);live=liveTick(faulty,live);expect(live.world.time).toBe(pb.world.time);expect(live.notice?.stop).toBe(true);
+ },T);
+ it('crew voices follow what each room can see',()=>{
+  const w=voyage(faulty,designerRuns.reproduce,46);
+  expect(voicesIn(faulty,w,'thermal_room').join()).toContain('40 °C');expect(voicesIn(faulty,w,'lab').join()).not.toContain('40 °C');
+ },T);
 });
