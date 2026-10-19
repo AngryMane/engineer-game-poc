@@ -83,3 +83,8 @@
 .device-io{border-collapse:collapse;font-size:12px;width:100%;margin:4px 0 8px}.device-io th,.device-io td{padding:5px 8px;border-bottom:1px solid #22333e;text-align:left;vertical-align:top}.device-io thead th{color:#8da5b2;font-weight:500}.device-io tbody th small{display:block;color:#829eac;font-weight:400}
 .ship-device h4{margin:10px 0 4px;font-size:12px;color:#a3bac6}.device-properties{list-style:none;padding:0;margin:4px 0;display:flex;flex-direction:column;gap:6px}.device-properties li>span{color:#c4d4dc}
 .details-popup:has(.ship-device){width:min(760px,96vw);max-width:96vw}
+.plan{height:640px}
+.compartment.crew{background:#13252c;border-style:solid;border-color:#2f5560}.compartment.maintenance{background:repeating-linear-gradient(135deg,#0f1a21 0 10px,#121f27 10px 20px)}
+.compartment.here{border:2px solid #50ddc1;box-shadow:0 0 0 3px #50ddc122}
+.room-name{background:transparent;border:none;padding:0;color:#c4d4dc;font-size:.8rem;text-align:left;display:flex;flex-direction:column}.room-name small{color:#7f9aab;font-size:.68rem}.room-name:hover{background:transparent;color:#50ddc1}
+.alarm-elsewhere{color:#ff9980;margin:6px 0}

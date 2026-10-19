@@ -10,7 +10,7 @@ import {readHierarchySession,hierarchySample,SHIP_SAVE_KEY,HIERARCHY_SAVE_KEY,sa
 import {HierarchyPlay} from './HierarchyPlay';
 import {App} from './App';
 import {caseScenarios} from './cases';
-import {channelKey} from './floorPlan';
+import {canEnter,channelKey,displaysIn} from './floorPlan';
 import {ShipFloor,ShipDevicePanel} from './ShipFloor';
 
 const T=120000;
@@ -121,7 +121,10 @@ describe('fault case: cooling falls short while the pump reports normal',()=>{
  },T);
  it('reports contain observed facts only, sampled from the hidden runs',()=>{
   for(const report of faulty.reports!){const obs=reportObservations(faulty,report);expect(obs.length).toBe(report.entries.length);}
-  const r1=reportObservations(faulty,faulty.reports![0]);expect(r1[1].values.mon_temp).toBeGreaterThan(40);expect(r1[2].values.rep_payload).toBe(3);
+  const r1=reportObservations(faulty,faulty.reports![0]);expect(r1[2].values.rep_payload).toBe(3);expect(r1[2].values.rep_data).toBe(r1[1].values.rep_data+6);
+  const r3=reportObservations(faulty,faulty.reports![2]);expect(r3[0].values.mon_temp).toBeGreaterThan(40);expect(r3[0].values.rep_flow).toBeLessThan(r3[1].values.rep_flow-5);
+  // Each crew member reports only what the screens and consoles in their own room show.
+  for(const report of faulty.reports!){const role=report.from.match(/（(.+)）/)![1],room=faulty.floor!.compartments.find(c=>c.role===role)!.id;for(const e of report.entries)for(const id of e.ids!){const node=faulty.inputs.find(i=>i.id===id)?.nodeId??id;expect(faulty.floor!.displays[node]??faulty.floor!.devices.find(d=>d.nodeId===node)!.compartment,`${report.id} ${id}`).toBe(room);}}
   const text=JSON.stringify(faulty.reports)+faulty.symptom+faulty.briefing.firstAction;
   for(const spoiler of ['一般負荷','pumpEssential','負荷区分','先着'])expect(text).not.toContain(spoiler);
  });
@@ -151,7 +154,8 @@ describe('ship play screen, experiments and saves',()=>{
   const html=renderToStaticMarkup(<App/>);
   expect(html).toContain('宇宙船 / 冷却が足りないのに、ポンプは正常を報告する');expect(html).toContain('>Messages<');
   expect(html).not.toMatch(/>\+\d+</);expect(html).toContain('>Run<');
-  expect(html).toContain('30 °C');expect(html).toContain('運転中');
+  // The game starts in the science lab: only its screens are shown.
+  expect(html).toContain('科学ラボの表示');expect(html).toContain('記録済みデータ量');expect(html).not.toContain('冷却ポンプ状態</h3>');
   // No mode switch and no designer sequences on the play screen.
   expect(html).not.toContain('Display mode');expect(html).not.toContain('pumpEssential');
   expect(renderToStaticMarkup(<HierarchyPlay s={caseScenarios[0]} onScenario={()=>{}}/>)).not.toContain('>Messages<');
@@ -159,18 +163,31 @@ describe('ship play screen, experiments and saves',()=>{
 });
 
 describe('ship floor plan: what the player sees first',()=>{
- const floorHtml=(w=createWorld(faulty))=>renderToStaticMarkup(<ShipFloor s={faulty} w={w} selected={null} onSelect={()=>{}} onInput={()=>{}}/>);
+ const floorHtml=(w=createWorld(faulty),room='lab')=>renderToStaticMarkup(<ShipFloor s={faulty} w={w} room={room} selected={null} onMove={()=>{}} onSelect={()=>{}} onInput={()=>{}}/>);
  const panel=(id:string,w=createWorld(faulty))=>renderToStaticMarkup(<ShipDevicePanel s={faulty} w={w} id={id} purpose="experiment" setPurpose={()=>{}} onEdit={()=>{}}/>);
  it('shows compartments, equipment and the crew console, but no wiring and no internal values',()=>{
   const html=floorHtml();
-  for(const label of ['機器ベイ','生命維持区画','電源室','熱制御区画','配電盤','冷却ポンプ','O₂生成装置','クルーコンソール'])expect(html).toContain(label);
-  // Commands are operated on the plan, at the consoles in the operations room.
-  expect(html).toContain('運用室');expect(html).toMatch(/aria-label="ペイロード運転指令"[^>]*>.*>実験運転<\/button>/);expect(html).toContain('aria-pressed="true"');
+  for(const label of ['科学ラボ','生命維持室','電力管理室','熱管理室','機器ベイ','生命維持機械室','電源室','熱制御区画','配電盤','冷却ポンプ','O₂生成装置','科学ラボの表示'])expect(html).toContain(label);
+  // Consoles are operated where they sit, only by someone in that room.
+  expect(html).toMatch(/aria-label="ペイロード運転指令"[^>]*>.*>実験運転<\/button>/);expect(html).toContain('aria-pressed="true"');
+  expect(html).toMatch(/aria-label="O₂生成モード指令"[^>]*><button disabled=""/);expect(html).not.toMatch(/aria-label="ペイロード運転指令"[^>]*><button disabled/);
   expect(html.slice(0,html.indexOf('船内配置図'))).not.toContain('type="number"');
+  const thermal=floorHtml(createWorld(faulty),'thermal_room'),screen=(h:string)=>h.slice(0,h.indexOf('運用契約'));
+  expect(screen(thermal)).toContain('冷却ポンプ状態');expect(screen(thermal)).toContain('冷却液流量');expect(screen(thermal)).not.toContain('記録済みデータ量');
+  expect(screen(floorHtml(createWorld(faulty),'bay'))).toContain('この部屋に表示はありません');
   expect(html).not.toContain('<path');expect(html).not.toContain('給電許可');expect(html).not.toContain('pumpEssential');
   const main=renderToStaticMarkup(<App/>);expect(main).toContain('船内配置図');expect(main).not.toContain('hierarchy-graph');
   // Measurement points and diagnosis are gone.
   for(const word of ['計測点','計測チャンネル','診断'])expect(main+html+panel('pdu'),word).not.toContain(word);
+ });
+ it('every output has a screen in one crew room, inner devices sit in maintenance areas, consoles in crew rooms',()=>{
+  const a=structuredClone(faulty);delete a.floor!.displays.rep_tank;expect(()=>validate(a)).toThrow(/表示する部屋がない出力/);
+  const b=structuredClone(faulty);b.floor!.displays.rep_tank='life';expect(()=>validate(b)).toThrow(/表示する部屋がない出力/);
+  const c=structuredClone(faulty);c.floor!.devices.find(d=>d.nodeId==='pdu')!.compartment='power_room';expect(()=>validate(c)).toThrow(/区画が不正/);
+  const d=structuredClone(faulty);d.floor!.devices.find(d=>d.nodeId==='ops_o2')!.compartment='life';expect(()=>validate(d)).toThrow(/区画が不正/);
+  // Every crew role has its own console or screens; the mechanic can enter every room but outside.
+  for(const room of faulty.floor!.compartments.filter(c=>c.access==='crew'))expect(displaysIn(faulty,room.id).length,room.id).toBeGreaterThan(0);
+  expect(faulty.floor!.compartments.filter(c=>canEnter(faulty,c.id)).map(c=>c.id)).not.toContain('outside');
  });
  it('every computing device is placed, and the plan is validated with the scenario',()=>{
   const s=structuredClone(faulty);s.floor!.devices=s.floor!.devices.filter(d=>d.nodeId!=='pdu');expect(()=>validate(s)).toThrow(/配置されていない設備/);

@@ -2,7 +2,7 @@ import {validateActions,toOperations,type Recipe,type ReplayAction} from './expe
 import {runExperiment,setupFor,validateSequence,type Experiment,type Recording} from './experiment';
 import type {DisplayMode} from './semanticModel';
 import {readGraphLayout,type GraphLayout} from './graphLayout';
-import {channelKey} from './floorPlan';
+import {canEnter,channelKey} from './floorPlan';
 import type {Scenario,World} from './engine';
 import {boundaryKey,readBoundary,validateHierarchyView,type HierarchyView} from './hierarchy';
 export type HierarchyPoint={time:number;values:Record<string,number>};
@@ -13,7 +13,7 @@ export type HierarchySessionV14={version:14;runStart?:World;runActions?:ReplayAc
  * v15: the run recording uses typed operations stamped with `atTick`, and each experiment
  * carries its own start snapshot, sequence, prediction, memo and computed outcome.
  */
-export type HierarchySession={version:15|16;sid:string;world:World;recording:Recording;displayMode?:DisplayMode;layout?:GraphLayout;view:HierarchyView;detailsOpen:boolean;points:HierarchyPoint[];notes:string;prediction:string;experiments:Experiment[];hint:number;reportHints?:Record<string,number>;speed?:number;investigation?:unknown};
+export type HierarchySession={version:15|16;sid:string;world:World;recording:Recording;displayMode?:DisplayMode;layout?:GraphLayout;view:HierarchyView;detailsOpen:boolean;points:HierarchyPoint[];notes:string;prediction:string;experiments:Experiment[];hint:number;reportHints?:Record<string,number>;speed?:number;investigation?:unknown;room?:string};
 export const HIERARCHY_SAVE_KEY='causal-hierarchy-session-v15';
 /** v16: scenarios with a signal dictionary (the ship). Worlds carry message logs; never mixed with v15. */
 export const SHIP_SAVE_KEY='causal-ship-session-v16';
@@ -47,6 +47,7 @@ export function readHierarchySession(s:Scenario,raw:string):HierarchySession {
  if(d.reportHints!==undefined&&(typeof d.reportHints!=='object'||Object.entries(d.reportHints).some(([id,n])=>!s.reports?.some(r=>r.id===id)||!Number.isInteger(n)||n<0||n>(s.reports!.find(r=>r.id===id)!.hints?.length??0))))throw Error('不正なヒント状態');
  validateHierarchyView(s,d.view);
  // v16 saves made before measurement points and diagnosis were removed may still carry them; they are ignored.
+ if(d.room!==undefined&&!(s.floor&&canEnter(s,d.room)))throw Error('不正な現在地');
  if(d.investigation!==undefined){if(!s.floor)throw Error('不正な調査状態');delete d.investigation;}
  if(d.layout!==undefined)d.layout=readGraphLayout(s,d.layout);
  validateSnapshot(s,d.world);

@@ -4,28 +4,30 @@ import {ModuleSpecification} from './ModuleDetails';
 import {Field} from './Editor';
 import {ConnectionMessages} from './MessageLog';
 import {KIND_LABELS,formatValue,lastMessage,signalOf} from './signals';
-import {deviceConnections} from './floorPlan';
+import {deviceConnections,displaysIn} from './floorPlan';
 
 const nameOf=(s:Scenario,id:string)=>s.nodes.find(n=>n.id===id)?.label??id;
 /** The values a command console offers, with their names from the signal dictionary. */
 const choices=(s:Scenario,input:Scenario['inputs'][number]):[number,string][]=>{const d=signalOf(s,s.nodes.find(n=>n.id===input.nodeId)?.signals?.out?.value);const out:[number,string][]=[];for(let v=input.min;v<=input.max+1e-9;v+=input.step)out.push([v,d?.values?.[v]??String(v)]);return out;};
 /**
- * Crew console and ship floor plan. Only what the crew sees is live: reports, commands and alarms.
- * Equipment is drawn where it sits; wiring is never drawn.
+ * The current room's screens and the ship floor plan. Outputs are read on screens in crew rooms, and
+ * consoles are operated there, so the mechanic has to go to a room to use it. Wiring is never drawn.
  */
-export function ShipFloor({s,w,selected,onSelect,onInput}:{s:Scenario;w:World;selected:string|null;onSelect:(id:string)=>void;onInput:(id:string,value:number)=>void}){
- const f=s.floor!,system=s.hierarchy!.modules.find(m=>m.id===s.hierarchy!.systemId)!;
+export function ShipFloor({s,w,room,selected,onMove,onSelect,onInput}:{s:Scenario;w:World;room:string;selected:string|null;onMove:(room:string)=>void;onSelect:(id:string)=>void;onInput:(id:string,value:number)=>void}){
+ const f=s.floor!,system=s.hierarchy!.modules.find(m=>m.id===s.hierarchy!.systemId)!,here=f.compartments.find(c=>c.id===room)!,shown=displaysIn(s,room);
+ const elsewhere=Object.keys(w.monitor.alerts).filter(id=>f.displays[id]&&f.displays[id]!==room).map(id=>f.compartments.find(c=>c.id===f.displays[id])!.label);
  return <section className="ship" aria-label="宇宙船">
-  <section className="panel crew-console" aria-label="クルーコンソール"><div className="panel-title"><h2>クルーコンソール</h2><span>クルーが見る報告と警報。指令は配置図の運用室の操作卓から</span></div>
-   <HierarchyOutputs s={s} w={w}/>
+  <section className="panel crew-console" aria-label="この部屋の表示"><div className="panel-title"><h2>{here.label}の表示</h2><span>{here.access==='crew'?`${here.role}のクルーの部屋。表示はこの部屋でだけ見られます`:'整備区画（メカニックだけが入れる）。クルー向けの表示はありません'}</span></div>
+   {shown.length?<HierarchyOutputs s={s} w={w} only={shown}/>:<p className="muted">この部屋に表示はありません。表示を見るには、クルーの部屋（{f.compartments.filter(c=>c.access==='crew').map(c=>c.label).join('・')}）へ移動してください。</p>}
+   {elsewhere.length>0&&<p className="alarm-elsewhere" role="status">警報：{[...new Set(elsewhere)].join('・')}の表示に異常があります。</p>}
    <details className="console-contract"><summary>運用契約（クリア条件）</summary><ModuleSpecification s={s} spec={system.spec} moduleId={system.id}/></details>
   </section>
-  <section className="panel ship-plan" aria-label="船内配置図"><div className="panel-title"><h2>船内配置図</h2><span>設備をクリックすると、メカニックとしてその設備の入力・出力・プロパティを点検できます</span></div>
+  <section className="panel ship-plan" aria-label="船内配置図"><div className="panel-title"><h2>船内配置図</h2><span>部屋をクリックすると移動します。設備をクリックすると、メカニックとしてその設備の入力・出力・プロパティを点検できます</span></div>
    <div className="plan">
-    {f.compartments.map(c=><div key={c.id} className={`compartment${c.outside?' outside':''}`} style={{left:`${c.x}%`,top:`${c.y}%`,width:c.outside?undefined:`${c.w}%`,height:`${c.h}%`}}><span>{c.label}</span></div>)}
-    {f.devices.map(d=>{const label=d.label??nameOf(s,d.nodeId),commands=s.inputs.filter(i=>i.nodeId===d.nodeId);
-     // Command consoles are operated where they sit on the plan; the button opens the device panel.
-     if(commands.length)return <div key={d.nodeId} className={`device console-device${selected===d.nodeId?' chosen':''}`} style={{left:`${d.x}%`,top:`${d.y}%`}}><button className="device-open" onClick={()=>onSelect(d.nodeId)} aria-label={`設備 ${label}`}><span className="device-icon" aria-hidden="true">{d.icon}</span><span>{label}</span></button>{commands.map(input=><div key={input.id} className="command-switch" role="group" aria-label={input.label}>{choices(s,input).map(([value,text])=><button key={value} className={w.parameters[input.nodeId][input.parameter]===value?'on':''} aria-pressed={w.parameters[input.nodeId][input.parameter]===value} onClick={()=>onInput(input.id,value)}>{text}</button>)}</div>)}</div>;
+    {f.compartments.map(c=><div key={c.id} className={`compartment ${c.access}${c.id===room?' here':''}${c.outside?' outside':''}`} style={{left:`${c.x}%`,top:`${c.y}%`,width:c.outside?undefined:`${c.w}%`,height:`${c.h}%`}}>{c.access==='outside'?<span>{c.label}</span>:<button className="room-name" onClick={()=>onMove(c.id)} aria-label={`${c.label}へ移動`} aria-current={c.id===room?'location':undefined}>{c.label}<small>{c.access==='crew'?c.role:'整備区画'}{c.id===room?' · 現在地':''}</small></button>}</div>)}
+    {f.devices.map(d=>{const label=d.label??nameOf(s,d.nodeId),commands=s.inputs.filter(i=>i.nodeId===d.nodeId),inRoom=d.compartment===room;
+     // Consoles are operated only by someone standing in their room; the name opens the device panel.
+     if(commands.length)return <div key={d.nodeId} className={`device console-device${selected===d.nodeId?' chosen':''}`} style={{left:`${d.x}%`,top:`${d.y}%`}}><button className="device-open" onClick={()=>onSelect(d.nodeId)} aria-label={`設備 ${label}`}><span className="device-icon" aria-hidden="true">{d.icon}</span><span>{label}</span></button>{commands.map(input=><div key={input.id} className="command-switch" role="group" aria-label={input.label} title={inRoom?undefined:'この部屋にいるときだけ操作できます'}>{choices(s,input).map(([value,text])=><button key={value} disabled={!inRoom} className={w.parameters[input.nodeId][input.parameter]===value?'on':''} aria-pressed={w.parameters[input.nodeId][input.parameter]===value} onClick={()=>onInput(input.id,value)}>{text}</button>)}</div>)}</div>;
      return <button key={d.nodeId} className={`device${selected===d.nodeId?' chosen':''}`} style={{left:`${d.x}%`,top:`${d.y}%`}} onClick={()=>onSelect(d.nodeId)} aria-label={`設備 ${label}`}><span className="device-icon" aria-hidden="true">{d.icon}</span><span>{label}</span></button>;})}
    </div>
   </section>
