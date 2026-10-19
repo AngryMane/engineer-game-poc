@@ -20,7 +20,7 @@ export const designerRuns={
 };
 
 const reports:FaultReport[]=[
- {id:'R1',title:'実験中に機器ラックが高温になり、ペイロードが制限運転に入った',from:'運用担当',
+ {id:'R1',title:'実験中に機器ラックが高温になり、ペイロードが制限運転に入った',from:'クルー（運用）',
   summary:'科学実験を始めてしばらくすると、独立監視の機器ラック温度が40 °Cを超え、その後ペイロードが熱保護で制限運転に入りました。冷却ポンプはその間ずっと「運転中」を報告していました。O₂増産もこの日に行いましたが、始めた時刻は記録していません。',
   runs:[{label:'A',inputs:designerRuns.reproduce}],
   entries:[
@@ -28,15 +28,15 @@ const reports:FaultReport[]=[
    {run:'A',time:34,ids:['mon_temp','rep_pump','rep_o2'],note:'機器ラック温度が40 °Cを超えた。'},
    {run:'A',time:50,ids:['mon_temp','rep_payload','rep_pump'],note:'ペイロードが制限運転に入っている。'},
   ],missing:'O₂増産を始めた時刻と、途中の画面の記録は残っていません。'},
- {id:'R2',title:'同じ実験計画の別の日は問題なかった',from:'運用担当',
+ {id:'R2',title:'同じ実験計画の別の日は問題なかった',from:'クルー（運用）',
   summary:'別の日も同じ時刻に実験運転を始め、同じようにO₂増産も行いました。この日は最後まで温度は正常で、ペイロードも実験運転を続けました。',
   runs:[{label:'B',inputs:designerRuns.control}],
   entries:[
    {run:'B',time:9,ids:[PAYLOAD,'mon_temp','rep_pump'],note:'実験運転を指令した直後。'},
    {run:'B',time:60,ids:['mon_temp','rep_payload','rep_o2'],note:'温度もペイロードも正常。'},
   ],missing:'この日も操作の時刻は一部しか残っていません。'},
- {id:'R3',title:'主バスは両日とも定格付近',from:'電力担当',
-  summary:'電力計の記録では、どちらの日も実験中の主バス負荷は定格5.5 kW付近でした。過負荷の記録はありません。生命維持担当からは「O₂の生成量は日によって違ったが、どちらも増産として仕様の範囲内だった」と報告がありました。',
+ {id:'R3',title:'主バスは両日とも定格付近',from:'クルー（電力）',
+  summary:'電力計の記録では、どちらの日も実験中の主バス負荷は定格5.5 kW付近でした。過負荷の記録はありません。生命維持のクルーからは「O₂の生成量は日によって違ったが、どちらも増産として仕様の範囲内だった」と報告がありました。',
   runs:[{label:'A',inputs:designerRuns.reproduce},{label:'B',inputs:designerRuns.control}],
   entries:[
    {run:'A',time:40,ids:['rep_bus','rep_o2'],note:'R1の日。'},
@@ -56,7 +56,7 @@ export function shipScenario(faulty=true):Scenario{
  return {...system,id:faulty?SHIP_SCENARIO_ID:`${SHIP_SCENARIO_ID}-healthy`,
   title:faulty?'宇宙船 / 冷却が足りないのに、ポンプは正常を報告する':'宇宙船 / 故障なし（設計確認用）',description:'宇宙船 · 障害案件',
   symptom:'航行中の船で、科学実験の最中に機器ラックがまれに高温になります。冷却ポンプは「運転中」を報告しています。実験で症状を再現し、船の運用契約（System の仕様）をすべて満たすように運転を正常化してください。',
-  briefing:{conditions:'',expected:'',expectedFlow:[],difference:'',firstAction:'まず指令を変えずにRunし、乗組員コンソールの平常時の値を確かめてください。次にレポートの日を実験として再現し、変種を作って比べましょう。設備をクリックすると、その設備の説明と、入力・出力・プロパティの現在値が見られます。'},
+  briefing:{conditions:'',expected:'',expectedFlow:[],difference:'',firstAction:'まず指令を変えずにRunし、クルーコンソールの平常時の値を確かめてください。次にレポートの日を実験として再現し、変種を作って比べましょう。設備をクリックすると、その設備の説明と、入力・出力・プロパティの現在値が見られます。'},
   faults:faulty?[{id:'F-pump-class',targetId:'pdu',key:'value',mode:'stuck',startStep:0,parameter:'pumpEssential',severity:0}]:[],
   reports:faulty?structuredClone(reports):[],hints:faulty?hints:[],
   solution:{rootCauseIds:['pdu'],stableSteps:24,causalPath:['O₂増産指令','O₂生成装置の電力要求','配電（ポンプが一般負荷）','ポンプ給電許可の頭打ち','冷却液流量の不足','機器ラック温度の上昇','温度報告','ペイロードの熱保護'],

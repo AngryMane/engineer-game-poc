@@ -163,7 +163,7 @@ describe('ship floor plan: what the player sees first',()=>{
  const panel=(id:string,w=createWorld(faulty))=>renderToStaticMarkup(<ShipDevicePanel s={faulty} w={w} id={id} purpose="experiment" setPurpose={()=>{}} onEdit={()=>{}}/>);
  it('shows compartments, equipment and the crew console, but no wiring and no internal values',()=>{
   const html=floorHtml();
-  for(const label of ['機器ベイ','生命維持区画','電源室','熱制御区画','配電盤','冷却ポンプ','O₂生成装置','乗組員コンソール'])expect(html).toContain(label);
+  for(const label of ['機器ベイ','生命維持区画','電源室','熱制御区画','配電盤','冷却ポンプ','O₂生成装置','クルーコンソール'])expect(html).toContain(label);
   // Commands are operated on the plan, at the consoles in the operations room.
   expect(html).toContain('運用室');expect(html).toMatch(/aria-label="ペイロード運転指令"[^>]*>.*>実験運転<\/button>/);expect(html).toContain('aria-pressed="true"');
   expect(html.slice(0,html.indexOf('船内配置図'))).not.toContain('type="number"');
@@ -189,7 +189,7 @@ describe('ship floor plan: what the player sees first',()=>{
  });
  it('internal state that is not sent anywhere is listed as a property, and command consoles show the crew command as their input',()=>{
   const payload=panel('payload');expect(payload.slice(payload.indexOf('プロパティ（'))).toContain('熱保護で制限運転中');
-  const console=panel('ops_payload');expect(console.slice(console.indexOf('入力（'),console.indexOf('出力（'))).toContain('乗組員の操作');expect(console).toContain('プロパティはありません');
+  const console=panel('ops_payload');expect(console.slice(console.indexOf('入力（'),console.indexOf('出力（'))).toContain('クルーの操作');expect(console).toContain('プロパティはありません');
   expect(panel('loop_temp')).toContain('船外環境（操作できない）');
  });
  it('timeline samples keep every connection, so a device\'s inputs and outputs can be charted, also for replays',()=>{

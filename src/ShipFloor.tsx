@@ -16,11 +16,11 @@ const choices=(s:Scenario,input:Scenario['inputs'][number]):[number,string][]=>{
 export function ShipFloor({s,w,selected,onSelect,onInput}:{s:Scenario;w:World;selected:string|null;onSelect:(id:string)=>void;onInput:(id:string,value:number)=>void}){
  const f=s.floor!,system=s.hierarchy!.modules.find(m=>m.id===s.hierarchy!.systemId)!;
  return <section className="ship" aria-label="宇宙船">
-  <section className="panel crew-console" aria-label="乗組員コンソール"><div className="panel-title"><h2>乗組員コンソール</h2><span>報告と警報。指令は配置図の運用室の操作卓から</span></div>
+  <section className="panel crew-console" aria-label="クルーコンソール"><div className="panel-title"><h2>クルーコンソール</h2><span>クルーが見る報告と警報。指令は配置図の運用室の操作卓から</span></div>
    <HierarchyOutputs s={s} w={w}/>
    <details className="console-contract"><summary>運用契約（クリア条件）</summary><ModuleSpecification s={s} spec={system.spec} moduleId={system.id}/></details>
   </section>
-  <section className="panel ship-plan" aria-label="船内配置図"><div className="panel-title"><h2>船内配置図</h2><span>設備をクリックすると、その設備の入力・出力・プロパティ</span></div>
+  <section className="panel ship-plan" aria-label="船内配置図"><div className="panel-title"><h2>船内配置図</h2><span>設備をクリックすると、メカニックとしてその設備の入力・出力・プロパティを点検できます</span></div>
    <div className="plan">
     {f.compartments.map(c=><div key={c.id} className={`compartment${c.outside?' outside':''}`} style={{left:`${c.x}%`,top:`${c.y}%`,width:c.outside?undefined:`${c.w}%`,height:`${c.h}%`}}><span>{c.label}</span></div>)}
     {f.devices.map(d=>{const label=d.label??nameOf(s,d.nodeId),commands=s.inputs.filter(i=>i.nodeId===d.nodeId);
@@ -43,11 +43,11 @@ export function ShipDevicePanel({s,w,id,purpose,setPurpose,onEdit}:{s:Scenario;w
  const settings=Object.keys(n.parameters).filter(key=>key!==command?.parameter),states=Object.keys(n.initialState).filter(key=>!outKeys.includes(key));
  const kind=(sig:NonNullable<ReturnType<typeof signalOf>>)=>`${KIND_LABELS[sig.kind]}${sig.unit?` · ${sig.unit}`:''}`;
  return <section className="panel ship-device"><div className="details-body">
-  <h2>{d.label??n.label}</h2><p className="muted">{room}</p>
+  <h2>{d.label??n.label}</h2><p className="muted">{room} · {n.kind==='inner'?'クルーからは見えない設備です。メカニックだけが点検し、設定を変えられます。':n.externalInput?'船外の設備です。誰も操作できません。':'クルーが操作する設備です。'}</p>
   <h3>説明</h3>{d.manual.map((line,i)=><p key={i}>{line}</p>)}
   <h3>入力（この設備が受け取る値）</h3>
   <table className="device-io"><thead><tr><th>値</th><th>送り元</th><th>最新の値</th><th>受け取った時刻</th></tr></thead><tbody>
-   {command&&<tr><th scope="row">{command.label}</th><td>乗組員の操作（配置図の操作卓）</td><td>{formatValue(s,n.signals?.out?.value,w.parameters[id][command.parameter])}</td><td>—</td></tr>}
+   {command&&<tr><th scope="row">{command.label}</th><td>クルーの操作（配置図の操作卓）</td><td>{formatValue(s,n.signals?.out?.value,w.parameters[id][command.parameter])}</td><td>—</td></tr>}
    {n.externalInput&&<tr><th scope="row">{n.label}</th><td>船外環境（操作できない）</td><td>{formatValue(s,n.signals?.out?.value,w.states[id].value)}</td><td>—</td></tr>}
    {inputs.map(e=>{const sig=signalOf(s,e.signal)!,m=lastMessage(w,e.id);return <tr key={e.id}><th scope="row">{sig.label}<small>{kind(sig)}</small></th><td>{nameOf(s,e.from)}</td><td>{m?formatValue(s,sig,m.value):'まだ受け取っていない'}</td><td>{m?`t=${m.deliveredAt}`:'—'}</td></tr>;})}
   </tbody></table>
@@ -59,7 +59,7 @@ export function ShipDevicePanel({s,w,id,purpose,setPurpose,onEdit}:{s:Scenario;w
   </tbody></table>
   <p className="muted">現在の値は、この設備がいま計算した値です。送った値は次の tick に相手に届きます。</p>
   <h3>プロパティ（この設備の設定と内部状態）</h3>
-  {settings.length>0&&<><h4>設定</h4><div className="edit-purpose"><label>変更の目的<select value={purpose} onChange={e=>setPurpose(e.target.value as Edit['purpose'])}><option value="experiment">実験</option><option value="repair">修理</option></select></label></div>
+  {settings.length>0&&<><h4>設定</h4><div className="edit-purpose"><label>変更の目的<select value={purpose} onChange={e=>setPurpose(e.target.value as Edit['purpose'])}><option value="experiment">実験</option><option value="repair">修理</option></select></label><small className="muted">設定を変えられるのはメカニックだけです。</small></div>
    <ul className="device-properties">{settings.map(key=>{const item=s.interventions.find(i=>i.target===id&&i.parameter===key&&i.storage!=='state');
     return <li key={key}>{item?<Field item={{...item,parameter:label(key)}} value={w.parameters[id][key]} onEdit={onEdit} actionLabel="変更"/>:<><span>{label(key)}</span> <b>{Number(w.parameters[id][key].toFixed(4))}</b> <small className="muted">変更できません</small></>}</li>;})}</ul></>}
   {states.length>0&&<><h4>内部状態</h4><ul className="device-properties">{states.map(key=><li key={key}><span>{label(key)}</span> <b>{Number(w.states[id][key].toFixed(4))}</b></li>)}</ul></>}
