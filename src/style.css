@@ -80,3 +80,6 @@
 .command-switch{display:flex;gap:2px;margin-top:4px}
 .command-switch button{flex:1;padding:3px 4px;font-size:.72rem;border:1px solid #3b5566;border-radius:5px;background:#0f1a21;color:inherit;cursor:pointer}
 .command-switch button.on{background:#50ddc1;color:#0f1a21;border-color:#50ddc1;font-weight:600}
+.device-io{border-collapse:collapse;font-size:12px;width:100%;margin:4px 0 8px}.device-io th,.device-io td{padding:5px 8px;border-bottom:1px solid #22333e;text-align:left;vertical-align:top}.device-io thead th{color:#8da5b2;font-weight:500}.device-io tbody th small{display:block;color:#829eac;font-weight:400}
+.ship-device h4{margin:10px 0 4px;font-size:12px;color:#a3bac6}.device-properties{list-style:none;padding:0;margin:4px 0;display:flex;flex-direction:column;gap:6px}.device-properties li>span{color:#c4d4dc}
+.details-popup:has(.ship-device){width:min(760px,96vw);max-width:96vw}

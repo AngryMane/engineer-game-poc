@@ -2,7 +2,7 @@ import {validateActions,toOperations,type Recipe,type ReplayAction} from './expe
 import {runExperiment,setupFor,validateSequence,type Experiment,type Recording} from './experiment';
 import type {DisplayMode} from './semanticModel';
 import {readGraphLayout,type GraphLayout} from './graphLayout';
-import {channelKey,validateInvestigation,type Investigation} from './floorPlan';
+import {channelKey} from './floorPlan';
 import type {Scenario,World} from './engine';
 import {boundaryKey,readBoundary,validateHierarchyView,type HierarchyView} from './hierarchy';
 export type HierarchyPoint={time:number;values:Record<string,number>};
@@ -13,7 +13,7 @@ export type HierarchySessionV14={version:14;runStart?:World;runActions?:ReplayAc
  * v15: the run recording uses typed operations stamped with `atTick`, and each experiment
  * carries its own start snapshot, sequence, prediction, memo and computed outcome.
  */
-export type HierarchySession={version:15|16;sid:string;world:World;recording:Recording;displayMode?:DisplayMode;layout?:GraphLayout;view:HierarchyView;detailsOpen:boolean;points:HierarchyPoint[];notes:string;prediction:string;experiments:Experiment[];hint:number;reportHints?:Record<string,number>;speed?:number;investigation?:Investigation};
+export type HierarchySession={version:15|16;sid:string;world:World;recording:Recording;displayMode?:DisplayMode;layout?:GraphLayout;view:HierarchyView;detailsOpen:boolean;points:HierarchyPoint[];notes:string;prediction:string;experiments:Experiment[];hint:number;reportHints?:Record<string,number>;speed?:number;investigation?:unknown};
 export const HIERARCHY_SAVE_KEY='causal-hierarchy-session-v15';
 /** v16: scenarios with a signal dictionary (the ship). Worlds carry message logs; never mixed with v15. */
 export const SHIP_SAVE_KEY='causal-ship-session-v16';
@@ -23,7 +23,7 @@ export const saveVersionFor=(s:Scenario):15|16=>s.signals?16:15;
 export const HIERARCHY_SAVE_KEY_V14='causal-hierarchy-session-v14';
 export function hierarchySample(s:Scenario,w:World):HierarchyPoint {
  return {time:w.time,values:Object.fromEntries([...s.hierarchy!.modules.flatMap(m=>m.ports.filter(p=>p.observable).map(p=>[boundaryKey(m.id,p.id),readBoundary(s,w,p).value])),...s.observations.map(o=>[o.id,w.states[o.target][o.key]]),
-  // Ship: the latest delivered value on every connection, so a probe placed later can read a replayed run.
+  // Ship: the latest delivered value on every connection, so any device's inputs and outputs can be charted, also for replays.
   ...(s.floor?s.connections.map(e=>[channelKey(e.id),w.signals[e.id]]):[])])};
 }
 /** Converts a v14 save. Experiments are rerun from their recorded start, so outcomes are exact. */
@@ -46,7 +46,8 @@ export function readHierarchySession(s:Scenario,raw:string):HierarchySession {
  if(d.displayMode!==undefined&&!['abstract','functional'].includes(d.displayMode))throw Error('Invalid display mode');
  if(d.reportHints!==undefined&&(typeof d.reportHints!=='object'||Object.entries(d.reportHints).some(([id,n])=>!s.reports?.some(r=>r.id===id)||!Number.isInteger(n)||n<0||n>(s.reports!.find(r=>r.id===id)!.hints?.length??0))))throw Error('不正なヒント状態');
  validateHierarchyView(s,d.view);
- if(s.floor){if(!d.investigation)throw Error('不正な調査状態');validateInvestigation(s,d.investigation);}else if(d.investigation!==undefined)throw Error('不正な調査状態');
+ // v16 saves made before measurement points and diagnosis were removed may still carry them; they are ignored.
+ if(d.investigation!==undefined){if(!s.floor)throw Error('不正な調査状態');delete d.investigation;}
  if(d.layout!==undefined)d.layout=readGraphLayout(s,d.layout);
  validateSnapshot(s,d.world);
  if(!d.recording)throw Error('不正な記録');validateSnapshot(s,d.recording.start);validateSequence(s,d.recording.operations,d.recording.start.time,d.world.time);
