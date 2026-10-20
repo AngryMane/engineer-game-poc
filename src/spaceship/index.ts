@@ -3,7 +3,6 @@ import type {FaultReport} from '../faultReports';
 import {shipSystem,PAYLOAD,O2,RECORD,ROUTE} from './system';
 
 /** New scenario id and save schema: old abstract saves are never converted into a ship world. */
-export const SHIP_SCENARIO_ID='ship-cooling-01';
 const at=(time:number,id:string,value:number)=>({time,id,value});
 
 /**
@@ -35,7 +34,7 @@ export const SHIP_FAULTS:Record<ShipFault,{targetId:string;parameter:string;seve
 // role, from the screens and consoles in that role's room only (plus the ship-wide fire alarm).
 const rec=(runs:{time:number;id:string;value:number}[])=>[...runs,at(8,RECORD,1)];
 const dayA=rec(designerRuns.reproduce),dayB=rec(designerRuns.ventSpark),dayC=rec(designerRuns.hotRoute);
-const reports:FaultReport[]=[
+const allReports:FaultReport[]=[
  {id:'R1',title:'［3号］実験の途中でペイロードが制限運転に入り、火災警報が鳴った',from:'クルー（科学担当）',
   summary:'カナリア3号で実験運転とデータ記録を始めました。しばらく順調でしたが、ペイロードが熱保護で制限運転に入った直後に火災警報が鳴り、船は爆発しました。この日はO₂増産もあったと聞いていますが、時刻は知りません。',
   runs:[{label:'3号',inputs:dayA}],
@@ -87,27 +86,107 @@ const reports:FaultReport[]=[
   ]},
 ];
 
-const hints=[
- '3号・5号・8号は、どれも爆発しましたが、火災警報が鳴るまでの経過が違います。1隻ずつ、報告の日の指示書を試験航海で再現してみましょう。',
- '3号と5号では、実験運転とO₂増産の順番が違うかもしれません。順番と間隔だけを変えた指示書で比べましょう。O₂増産は生命維持室、実験運転は科学ラボの操作卓で指令します。',
- '火災の原因は、防災監視の設備パネルで見られます。熱暴走（機器ラックが熱くなりすぎた）か、火花（酸素が多いところでペイロードが起動した）かで、調べる場所が変わります。',
- '冷却液流量が増えない理由は、冷却ポンプの入力（冷却流量指令・ポンプ給電許可）と、冷却制御のプロパティを見ると分かります。3号と8号では、増えない値も理由も違います。',
- '5号の機器ベイの酸素がどこから来て、どこへ出ていくのか、O₂タンクと換気ファンの設備パネルで確かめましょう。',
- '8号は航路だけが違います。航法室で航路を変えた指示書を作り、標準航路と暑い航路で比べましょう。',
+/** Reports of one case, numbered from R1 within the case. */
+const pick=(...ids:string[])=>allReports.filter(r=>ids.includes(r.id)).map((r,i)=>({...r,id:`R${i+1}`}));
+// The last case: one stock ship with two faults. Two sister ships ran into different days; both overheated.
+const dayAC1=rec(designerRuns.reproduce),dayAC2=rec(designerRuns.hotRoute);
+const finalReports:FaultReport[]=[
+ {id:'R1',title:'［11号］機器ラックが高温になり、冷却液流量が増えなかった',from:'クルー（熱制御担当）',
+  summary:'カナリア11号では、実験運転が始まると機器ラック温度（独立監視）が上がり続け、火災警報が鳴って爆発しました。冷却ポンプはずっと「運転中」で、冷却液流量は12 L/minから増えませんでした。',
+  runs:[{label:'11号',inputs:dayAC1}],
+  entries:[
+   {run:'11号',time:20,ids:['mon_temp','rep_pump','rep_flow'],note:'温度が上がり始めた。'},
+   {run:'11号',time:35,ids:['mon_temp','rep_pump','rep_flow'],note:'40 °Cを超えた。'},
+   {run:'11号',time:47,ids:['mon_temp','rep_fire'],note:'火災警報。'},
+  ]},
+ {id:'R2',title:'［11号］O₂増産をしていた',from:'クルー（生命維持担当）',
+  summary:'カナリア11号では、実験が始まったころにO₂増産を始めました。生成量は2 L/minで、仕様の範囲内でした。',
+  runs:[{label:'11号',inputs:dayAC1}],
+  entries:[{run:'11号',time:30,ids:[O2,'rep_o2'],note:'増産中。'}],missing:'増産を始めた正確な時刻は残っていません。'},
+ {id:'R3',title:'［12号］機器ラックが高温になり、冷却液流量が増えなかった',from:'クルー（熱制御担当）',
+  summary:'カナリア12号でも、実験運転が始まると機器ラック温度が上がり、火災警報が鳴って爆発しました。冷却ポンプはずっと「運転中」で、冷却液流量は16 L/minから増えませんでした。',
+  runs:[{label:'12号',inputs:dayAC2}],
+  entries:[
+   {run:'12号',time:20,ids:['mon_temp','rep_pump','rep_flow'],note:'温度が上がり始めた。'},
+   {run:'12号',time:40,ids:['mon_temp','rep_pump','rep_flow'],note:'40 °Cを超えた。流量は変わらない。'},
+   {run:'12号',time:50,ids:['mon_temp','rep_fire'],note:'火災警報。'},
+  ]},
+ {id:'R4',title:'［12号］暑い航路を選んだ',from:'クルー（航法担当）',
+  summary:'カナリア12号は、出航時に暑い航路を選びました。',
+  runs:[{label:'12号',inputs:dayAC2}],
+  entries:[{run:'12号',time:5,ids:[ROUTE,'rep_loop'],note:'暑い航路を選んだ直後。'}]},
 ];
 
+const firstAction='まず指令を変えずにRunし、各部屋の表示で平常時の値を確かめてください。表示はその部屋でしか見られず、操作卓もその部屋でしか操作できないので、部屋をクリックして移動します。次に報告の日を試験航海として再現し、指示書を書き換えて比べましょう。設備をクリックすると、その設備の説明と、入力・出力・プロパティの現在値が見られます。';
+const contract='運用契約（System の仕様）をすべて満たし、どの指示書でも爆発しなくなれば改修完了です。';
+const repairNote='割り当て容量を定格より上げる、熱保護の作動温度を上げる、温度センサーの校正をずらすといった帳尻合わせは不合格です。';
+const explain={
+ A:'配電盤で、冷却ポンプが重要負荷ではなく一般負荷として登録されていました。一般負荷は先着順なので、実験運転を始めてポンプが流量を上げる前にO₂増産が始まると、O₂生成装置が主バスの空きを先に確保します。ポンプの給電許可は1.5 kW（12 L/min）で頭打ちになり、機器ラックが42 °Cを超えて熱暴走しました。',
+ B:'機器ベイの換気ファンの排出量が1.5ではなく0.3になっていました。O₂増産を続けてタンクが満杯になると、逃がし弁があふれた酸素を機器ベイへ出し、ファンが追いつかずに酸素がたまりました。そこで実験運転を始めると、起動時の火花で引火しました。',
+ C:'冷却制御の最大流量が30ではなく16 L/minになっていました。標準航路ではぎりぎり足りますが、暑い航路では冷却が足りず、機器ラックが熱暴走しました。',
+};
+const observe={
+ A:'実験運転の数tick後にO₂増産を始めると再現し、増産を遅らせると起きません。冷却液流量は12 L/minで止まり、ポンプの電力要求3.75 kWに対して給電許可は1.5 kWです。',
+ B:'O₂増産を長く続けてから実験運転を始めると、始めた直後に火災になります。順番が逆なら起きません。機器ベイの酸素濃度が30 %を超えています。',
+ C:'暑い航路でだけ起き、O₂増産とは関係ありません。冷却液流量が16 L/minで止まります。',
+};
+const repair={
+ A:'直接の修理は、冷却ポンプの負荷区分を重要負荷（1）に戻すことです。O₂増産時の要求電力を3.5 kW以下にする、冷却の最低流量を20 L/min以上にしてポンプに先に電力を確保させる修理も認めます。',
+ B:'直接の修理は、換気ファンの排出量を1.5に戻すことです。',
+ C:'直接の修理は、冷却制御の最大流量を30に戻すことです。24 L/min以上なら暑い航路でも足ります。最低流量を上げても、上限が16のままでは足りません。',
+};
+
+/** One fault per case, all on the same ship design. The final case puts two faults on one ship. */
+export type ShipCase={id:string;title:string;faults:ShipFault[];symptom:string;reports:FaultReport[];hints:string[];rootCauseIds:string[]};
+export const SHIP_CASES:ShipCase[]=[
+ {id:'ship-canary-03',title:'宇宙船 / 1. カナリア3号の爆発',faults:['A'],rootCauseIds:['pdu'],reports:pick('R1','R2','R3'),
+  symptom:`同型船カナリア級の3号が爆発しました（乗員は全員、脱出ポッドで無事でした）。在庫のカナリア級を試験航海に出して爆発を再現し、原因を突き止めて設定を直してください。${contract}`,
+  hints:[
+   '3号の報告を、試験航海で再現してみましょう。O₂増産は生命維持室、実験運転は科学ラボの操作卓で指令します。',
+   '実験運転とO₂増産の順番と間隔だけを変えた指示書で比べましょう。',
+   '火災の原因は、防災監視の設備パネルで見られます。冷却液流量が増えない理由は、冷却ポンプの入力（冷却流量指令・ポンプ給電許可）を見ると分かります。',
+   '配電盤の説明では、冷却ポンプは重要負荷です。配電盤のプロパティが説明どおりか確かめましょう。',
+  ]},
+ {id:'ship-canary-05',title:'宇宙船 / 2. カナリア5号の爆発',faults:['B'],rootCauseIds:['bay_air'],reports:pick('R4','R5'),
+  symptom:`カナリア5号が爆発しました（乗員は全員、脱出ポッドで無事でした）。3号とは様子が違います。在庫のカナリア級で再現し、原因を突き止めて設定を直してください。${contract}`,
+  hints:[
+   '5号の報告を、試験航海で再現してみましょう。O₂増産を始めた時刻と、実験運転を始めた時刻が手掛かりです。',
+   '火災の原因は、防災監視の設備パネルで見られます。今回は機器ラックが熱くなる前に火災が起きています。',
+   '機器ベイの酸素がどこから来て、どこへ出ていくのか、O₂タンクと換気ファンの設備パネルで確かめましょう。',
+  ]},
+ {id:'ship-canary-08',title:'宇宙船 / 3. カナリア8号の爆発',faults:['C'],rootCauseIds:['cool_ctrl'],reports:pick('R6','R7'),
+  symptom:`カナリア8号が爆発しました（乗員は全員、脱出ポッドで無事でした）。この日はO₂増産をしていません。在庫のカナリア級で再現し、原因を突き止めて設定を直してください。${contract}`,
+  hints:[
+   '8号の報告を、試験航海で再現してみましょう。航路は航法室の操作卓で指令します。',
+   '標準航路と暑い航路で、ほかの指令を同じにした指示書を比べましょう。',
+   '冷却液流量が増えない理由は、冷却ポンプの入力（冷却流量指令）と、冷却制御のプロパティを見ると分かります。',
+  ]},
+ {id:'ship-canary-final',title:'宇宙船 / 4. 同じ症状の2隻（不具合は2つ）',faults:['A','C'],rootCauseIds:['pdu','cool_ctrl'],reports:finalReports,
+  symptom:`カナリア11号と12号が、どちらも機器ラックの過熱で爆発しました。在庫のカナリア級には、不具合が2つ入っていることが分かっています。どちらの報告がどの不具合によるものかを見分け、両方を直してください。${contract}`,
+  hints:[
+   '11号と12号は、どちらも冷却液流量が増えずに過熱しています。止まった流量の値と、その日の指令の違いに注目しましょう。',
+   '1つ直したら、両方の日の指示書で試験航海をし直しましょう。片方だけ直っても、もう片方は爆発します。',
+  ]},
+];
+const SOLUTION_PATH=['O₂増産指令','配電盤','ポンプ給電許可','冷却液流量','機器ラック温度'];
+export function caseScenario(c:ShipCase):Scenario{
+ const s=shipScenario(c.faults);
+ const parts=c.faults.map(f=>({f,label:c.faults.length>1?`${f==='A'?'11号':'12号'}：`:''}));
+ return {...s,id:c.id,title:c.title,symptom:c.symptom,reports:structuredClone(c.reports),hints:c.hints,
+  solution:{rootCauseIds:c.rootCauseIds,stableSteps:24,causalPath:c.faults.length===1&&c.faults[0]==='A'?SOLUTION_PATH:[],
+   explanation:parts.map(p=>p.label+explain[p.f]).join('\n'),observations:parts.map(p=>p.label+observe[p.f]).join('\n'),misleading:parts.map(p=>p.label+repair[p.f]).join('\n')+'\n'+repairNote}};
+}
+/** Playable cases in order. The first one is where the game starts. */
+export const shipScenarios=SHIP_CASES.map(caseScenario);
+export const SHIP_SCENARIO_ID=SHIP_CASES[0].id;
+
+/** A ship with any set of faults, for tests and design checks. No reports. */
 export function shipScenario(faults:ShipFault[]|boolean=true):Scenario{
  const list:ShipFault[]=faults===true?['A','B','C']:faults===false?[]:faults,faulty=list.length>0;
  const system=structuredClone(shipSystem);
- return {...system,terminal:{nodeId:'hazard',key:'exploded',causeKey:'cause',causes:{1:'機器ベイの熱暴走',2:'機器ベイの酸素への引火'}},id:list.length===3?SHIP_SCENARIO_ID:faulty?`${SHIP_SCENARIO_ID}-${list.join('')}`:`${SHIP_SCENARIO_ID}-healthy`,
-  title:faulty?'宇宙船 / カナリア級の連続爆発':'宇宙船 / 故障なし（設計確認用）',description:'宇宙船 · 障害案件',
-  symptom:'同型船カナリア級の3号・5号・8号が、別々の日に爆発しました（乗員は全員、脱出ポッドで無事でした）。在庫のカナリア級を試験航海に出して爆発を再現し、原因を突き止めて設定を直してください。運用契約（System の仕様）をすべて満たし、どの指示書でも爆発しなくなれば改修完了です。',
-  briefing:{conditions:'',expected:'',expectedFlow:[],difference:'',firstAction:'まず指令を変えずにRunし、各部屋の表示で平常時の値を確かめてください。表示はその部屋でしか見られず、操作卓もその部屋でしか操作できないので、部屋をクリックして移動します。次に報告の日を試験航海として再現し、指示書を書き換えて比べましょう。設備をクリックすると、その設備の説明と、入力・出力・プロパティの現在値が見られます。'},
+ return {...system,terminal:{nodeId:'hazard',key:'exploded',causeKey:'cause',causes:{1:'機器ベイの熱暴走',2:'機器ベイの酸素への引火'}},id:faulty?`ship-canary-${list.join('')}`:'ship-canary-healthy',
+  title:faulty?`宇宙船 / 不具合 ${list.join('・')}（設計確認用）`:'宇宙船 / 故障なし（設計確認用）',description:'宇宙船 · 障害案件',
+  symptom:'',briefing:{conditions:'',expected:'',expectedFlow:[],difference:'',firstAction},
   faults:list.map(f=>({id:`F-${f}`,key:'value',mode:'stuck' as const,startStep:0,...SHIP_FAULTS[f]})),
-  reports:faulty?structuredClone(reports):[],hints:faulty?hints:[],
-  solution:{rootCauseIds:['pdu','bay_air','cool_ctrl'],stableSteps:24,causalPath:[],
-   explanation:'3つの不具合が同じ製造ロットに入っていました。\n3号：配電盤で、冷却ポンプが重要負荷ではなく一般負荷として登録されていました。一般負荷は先着順なので、実験運転を始めてポンプが流量を上げる前にO₂増産が始まると、O₂生成装置が主バスの空きを先に確保します。ポンプの給電許可は1.5 kW（12 L/min）で頭打ちになり、機器ラックが42 °Cを超えて熱暴走しました。\n5号：機器ベイの換気ファンの排出量が1.5ではなく0.3になっていました。O₂増産を続けてタンクが満杯になると、逃がし弁があふれた酸素を機器ベイへ出し、ファンが追いつかずに酸素がたまりました。そこで実験運転を始めると、起動時の火花で引火しました。\n8号：冷却制御の最大流量が30ではなく16 L/minになっていました。標準航路ではぎりぎり足りますが、暑い航路では冷却が足りず、機器ラックが熱暴走しました。',
-   observations:'3号：実験運転の数tick後にO₂増産を始めると再現し、増産を遅らせると起きません。冷却液流量は12 L/minで止まり、ポンプの電力要求3.75 kWに対して給電許可は1.5 kWです。\n5号：O₂増産を長く続けてから実験運転を始めると、始めた直後に火災になります。順番が逆なら起きません。機器ベイの酸素濃度が30 %を超えています。\n8号：暑い航路でだけ起き、O₂増産とは関係ありません。冷却液流量が16 L/minで止まります。',
-   misleading:'直接の修理は、冷却ポンプの負荷区分を重要負荷（1）に、換気ファンの排出量を1.5に、冷却制御の最大流量を30に戻すことです。3号は、O₂増産時の要求電力を3.5 kW以下にする、最低流量を20 L/min以上にする修理も認めます（最低流量20は8号の冷却不足も補います）。割り当て容量を定格より上げる、熱保護の作動温度を上げる、温度センサーの校正をずらすといった帳尻合わせは不合格です。'}};
+  reports:[],hints:[],solution:{rootCauseIds:[],stableSteps:24,causalPath:[],explanation:'',observations:'',misleading:''}};
 }
-export const shipScenarios=[shipScenario(true)];

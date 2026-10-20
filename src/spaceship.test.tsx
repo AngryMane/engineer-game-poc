@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {createWorld,step,setInput,intervene,validate,validateBehavior,type Scenario,type World} from './engine';
-import {shipScenario,designerRuns,SHIP_SCENARIO_ID} from './spaceship';
+import {shipScenario,shipScenarios,designerRuns,SHIP_SCENARIO_ID,SHIP_CASES} from './spaceship';
 import {ROUTE} from './spaceship/system';
 import {terminated} from './engine';
 import {runToEnd,startPlayback} from './experiment';
@@ -97,7 +97,7 @@ describe('fault A: cooling falls short while the pump reports normal',()=>{
   for(const gap of [0,10,40])expect(onsets(run(onlyA,[{time:4,id:O2,value:1},{time:4+gap,id:PAYLOAD,value:2}],200)).length,`gap ${gap}`).toBeGreaterThan(0);
   for(const gap of [0,4])expect(onsets(run(onlyA,[{time:8,id:PAYLOAD,value:2},{time:8+gap,id:O2,value:1}],200)).length,`gap ${gap}`).toBeGreaterThan(0);
   for(const gap of [10,30])expect(onsets(run(onlyA,[{time:8,id:PAYLOAD,value:2},{time:8+gap,id:O2,value:1}],200)),`gap ${gap}`).toEqual([]);
- });
+ },T);
  it('message history supports the hypothesis: the bad day gets more O₂ and a smaller pump grant than the good day',()=>{
   const bad=run(onlyA,designerRuns.reproduce,60),good=run(onlyA,designerRuns.control,60);
   expect(lastMessage(bad,'c_o2_rate')!.value).toBeCloseTo(2);expect(lastMessage(good,'c_o2_rate')!.value).toBeLessThan(1.5);
@@ -124,17 +124,21 @@ describe('fault A: cooling falls short while the pump reports normal',()=>{
   for(let i=0;i<40&&!w.verification.cleared;i++)w=step(faulty,w);
   expect(w.edits[0]).toMatchObject({purpose:'repair',target:'pdu'});expect(w.verification.cleared).toBe(true);
  },T);
- it('reports contain observed facts only, sampled from the hidden runs',()=>{
-  for(const report of faulty.reports!){const obs=reportObservations(faulty,report);expect(obs.length).toBe(report.entries.length);}
-  const r1=reportObservations(faulty,faulty.reports![0]);expect(r1[2].values.rep_payload).toBe(3);expect(r1[2].values.rep_fire).toBe(1);
-  const r2=reportObservations(faulty,faulty.reports![1]);expect(r2[1].values.mon_temp).toBeGreaterThan(40);expect(r2[1].values.rep_flow).toBe(12);
-  const r5=reportObservations(faulty,faulty.reports![4]);expect(r5[1].values.rep_fire).toBe(1);
-  const r7=reportObservations(faulty,faulty.reports![6]);expect(r7[1].values.rep_flow).toBe(16);
-  // Each crew member reports only what the screens and consoles in their own room show.
-  for(const report of faulty.reports!){const role=report.from.match(/（(.+)）/)![1],room=faulty.floor!.compartments.find(c=>c.role===role)!.id;for(const e of report.entries)for(const id of e.ids!){const node=faulty.inputs.find(i=>i.id===id)?.nodeId??id;if(node===faulty.floor!.alarm)continue;expect(faulty.floor!.displays[node]??faulty.floor!.devices.find(d=>d.nodeId===node)!.compartment,`${report.id} ${id}`).toBe(room);}}
-  const text=JSON.stringify(faulty.reports)+faulty.symptom+faulty.briefing.firstAction;
-  for(const spoiler of ['一般負荷','pumpEssential','負荷区分','先着'])expect(text).not.toContain(spoiler);
- });
+ it('reports contain observed facts only, sampled from the hidden runs, and each crew member reports from their own room',()=>{
+  for(const sc of shipScenarios){
+   for(const report of sc.reports!){const obs=reportObservations(sc,report);expect(obs.length).toBe(report.entries.length);
+    const role=report.from.match(/（(.+)）/)![1],room=sc.floor!.compartments.find(c=>c.role===role)!.id;
+    for(const e of report.entries)for(const id of e.ids!){const node=sc.inputs.find(i=>i.id===id)?.nodeId??id;if(node===sc.floor!.alarm)continue;expect(sc.floor!.displays[node]??sc.floor!.devices.find(d=>d.nodeId===node)!.compartment,`${sc.id} ${report.id} ${id}`).toBe(room);}}
+   const text=JSON.stringify(sc.reports)+sc.symptom+sc.briefing.firstAction;
+   for(const spoiler of ['一般負荷','pumpEssential','負荷区分','先着','排出量','最大流量'])expect(text,sc.id).not.toContain(spoiler);
+  }
+  const [c3,c5,c8,last]=shipScenarios,obs=(sc:Scenario,i:number)=>reportObservations(sc,sc.reports![i]);
+  expect(obs(c3,0)[2].values).toMatchObject({rep_payload:3,rep_fire:1});expect(obs(c3,1)[1].values.mon_temp).toBeGreaterThan(40);expect(obs(c3,1)[1].values.rep_flow).toBe(12);
+  expect(obs(c5,0)[1].values.rep_tank).toBe(100);expect(obs(c5,1)[1].values.rep_fire).toBe(1);
+  expect(obs(c8,1)[1].values.rep_flow).toBe(16);expect(obs(c8,1)[2].values.rep_fire).toBe(1);
+  expect(obs(last,0)[1].values.rep_flow).toBe(12);expect(obs(last,0)[2].values.rep_fire).toBe(1);expect(obs(last,1)[0].values['ops_o2.mode']).toBe(1);
+  expect(obs(last,2)[1].values.rep_flow).toBe(16);expect(obs(last,2)[2].values.rep_fire).toBe(1);
+ },T);
 });
 
 describe('ship play screen, experiments and saves',()=>{
@@ -150,7 +154,7 @@ describe('ship play screen, experiments and saves',()=>{
  it('saves under a new key and schema; old abstract saves are not converted',()=>{
   expect(saveKeyFor(faulty)).toBe(SHIP_SAVE_KEY);expect(saveKeyFor(caseScenarios[0])).toBe(HIERARCHY_SAVE_KEY);
   const world=run(faulty,designerRuns.reproduce,30);
-  const data:HierarchySession={version:16,sid:SHIP_SCENARIO_ID,world,recording:{start:createWorld(faulty),operations:ops},view:{scope:null,selected:null},detailsOpen:false,points:[hierarchySample(faulty,world)],notes:'',prediction:'',experiments:[],hint:0};
+  const data:HierarchySession={version:16,sid:faulty.id,world,recording:{start:createWorld(faulty),operations:ops},view:{scope:null,selected:null},detailsOpen:false,points:[hierarchySample(faulty,world)],notes:'',prediction:'',experiments:[],hint:0};
   expect(readHierarchySession(faulty,JSON.stringify(data))).toEqual(data);
   // Saves made while measurement points and diagnosis existed still load; that part is dropped.
   expect(readHierarchySession(faulty,JSON.stringify({...data,investigation:{probes:[{connectionId:'c_pump_grant',since:12}],diagnosed:['pdu'],extraDiagnoses:0}}))).toEqual(data);
@@ -159,7 +163,7 @@ describe('ship play screen, experiments and saves',()=>{
  });
  it('the main screen is the ship, with run controls only and a message log tab',()=>{
   const html=renderToStaticMarkup(<App/>);
-  expect(html).toContain('宇宙船 / カナリア級の連続爆発');expect(html).toContain('本日の爆発：0 隻');expect(html).toContain('>Messages<');
+  expect(html).toContain('宇宙船 / 1. カナリア3号の爆発');expect(SHIP_SCENARIO_ID).toBe('ship-canary-03');expect(html).toContain('本日の爆発：0 隻');expect(html).toContain('>Messages<');
   expect(html).not.toMatch(/>\+\d+</);expect(html).toContain('>Run<');
   // The game starts in the science lab: only its screens are shown.
   expect(html).toContain('科学ラボの表示');expect(html).toContain('記録済みデータ量');expect(html).not.toContain('冷却ポンプ状態</h3>');
@@ -261,4 +265,37 @@ describe('same-class ships: three faults, three ways to explode',()=>{
   const w=voyage(faulty,designerRuns.reproduce,46);
   expect(voicesIn(faulty,w,'thermal_room').join()).toContain('40 °C');expect(voicesIn(faulty,w,'lab').join()).not.toContain('40 °C');
  },T);
+});
+
+describe('one fault per case, on one shared ship',()=>{
+ const strip=(sc:Scenario)=>({nodes:sc.nodes,connections:sc.connections,floor:sc.floor,inputs:sc.inputs,interventions:sc.interventions,outputRequirements:sc.outputRequirements,behaviorCases:sc.behaviorCases,signals:sc.signals,hierarchy:sc.hierarchy});
+ it('four cases in order: three single faults, then one ship with two',()=>{
+  expect(shipScenarios.map(sc=>sc.id)).toEqual(['ship-canary-03','ship-canary-05','ship-canary-08','ship-canary-final']);
+  expect(SHIP_CASES.map(c=>c.faults.join(''))).toEqual(['A','B','C','AC']);
+  for(const sc of shipScenarios){expect(strip(sc)).toEqual(strip(healthy));expect(sc.reports!.map(r=>r.id)).toEqual(sc.reports!.map((_,i)=>`R${i+1}`));}
+ });
+ it('each case fails before repair and passes with its own direct repair only',()=>{
+  const direct:Record<string,Record<string,number>>={A:{'pdu.pumpEssential':1},B:{'bay_air.fan':1.5},C:{'cool_ctrl.maxFlow':30}};
+  for(const c of SHIP_CASES){const sc=shipScenarios.find(s=>s.id===c.id)!;
+   expect(check(sc,{}).passed,c.id).toBe(false);
+   expect(check(sc,Object.assign({},...c.faults.map(f=>direct[f]))),c.id).toMatchObject({passed:true});
+   if(c.faults.length>1)for(const f of c.faults)expect(check(sc,direct[f]).passed,`${c.id} only ${f}`).toBe(false);}
+ },T*3);
+ it('alternative repairs are accepted per case, and bypasses are not',()=>{
+  const [c3,,c8]=shipScenarios;
+  for(const patch of [{'o2gen.boostPower':3.5},{'cool_ctrl.minFlow':20}] as Record<string,number>[])expect(check(c3,patch),JSON.stringify(patch)).toMatchObject({passed:true});
+  expect(check(c8,{'cool_ctrl.maxFlow':24})).toMatchObject({passed:true});
+  for(const patch of [{'cool_ctrl.minFlow':20},{'payload.trip':50}] as Record<string,number>[])expect(check(c8,patch).passed,JSON.stringify(patch)).toBe(false);
+ },T*2);
+ it('a healthy ship survives any crew operation: random command sequences never break the contract or explode',()=>{
+  let seed=12345;const rnd=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+  for(let k=0;k<25;k++){
+   let w=createWorld(healthy);const ops:Input[]=[];
+   for(let t=0;t<250;t++){
+    if(rnd()<0.06){const i=healthy.inputs[Math.floor(rnd()*healthy.inputs.length)],value=i.min+Math.floor(rnd()*((i.max-i.min)/i.step+1))*i.step;ops.push({time:t,id:i.id,value});w=setInput(healthy,w,i.id,value);}
+    w=step(healthy,w,false);
+   }
+   expect(w.monitor.logs,JSON.stringify(ops)).toEqual([]);expect(w.states.hazard.exploded,JSON.stringify(ops)).toBe(0);
+  }
+ },T*3);
 });
