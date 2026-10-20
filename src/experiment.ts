@@ -98,7 +98,7 @@ export function advancePlayback(s:Scenario,pb:Playback,ticks=1):Playback{
  }
  return p;
 }
-/** What ended a run, in the scenario's words (ship: 熱暴走 or 火花). */
+/** What ended a run, in the scenario's words (ship: 過熱による発火 or 火花). */
 export function terminalCause(s:Scenario,w:World){const t=s.terminal;if(!t?.causeKey||!t.causes)return undefined;return t.causes[w.states[t.nodeId][t.causeKey]];}
 export const runToEnd=(s:Scenario,pb:Playback)=>advancePlayback(s,pb,Number.POSITIVE_INFINITY);
 export const nextOperation=(pb:Playback):Operation|undefined=>pb.operations[pb.next];

@@ -34,11 +34,11 @@ describe('meaning-bearing signals',()=>{
   expect(formatValue(faulty,'thermal.rackTemperature',20)).toBe('20 °C');
   expect(formatValue(faulty,'power.pumpGrant',20)).toBe('20 kW');
   expect(formatValue(faulty,'thermal.coolantFlow',20)).toBe('20 L/min');
-  expect(formatValue(faulty,'payload.status',3)).toBe('制限運転（熱保護）');
+  expect(formatValue(faulty,'payload.status',3)).toBe('出力制限（過熱防止）');
  });
  it('detects a connection that carries a different kind of information than the receiver expects',()=>{
   const s=structuredClone(faulty);s.connections.push({...s.connections.find(e=>e.id==='c_report_ctrl')!,id:'c_wrong',to:'pdu',input:'pumpRequest'});
-  expect(()=>validate(s)).toThrow(/機器ラック温度（°C）≠ ポンプ電力要求（kW）/);
+  expect(()=>validate(s)).toThrow(/電子機器の温度（°C）≠ ポンプの電力申請（kW）/);
  });
  it('detects a unit that disagrees with the signal dictionary, and unknown signals',()=>{
   const s=structuredClone(faulty);s.connections.find(e=>e.id==='c_flow')!.unit='kW';expect(()=>validate(s)).toThrow(/単位/);
@@ -57,7 +57,7 @@ describe('meaning-bearing signals',()=>{
   const later=run(healthy,[],16);
   expect(lastMessage(later,'c_report_ctrl')!.deliveredAt).toBe(13);
   expect(later.frames.cool_ctrl.adopted!.c_report_ctrl).toMatchObject({adoptedAt:16,emittedAt:12,measuredAt:11,deliveredAt:13});
-  expect(messageText(healthy,report)).toBe(`t=13 受信 · ラック温度センサー → 冷却制御：機器ラック温度の計測報告 ${formatValue(healthy,'thermal.rackTemperatureReport',report.value)}（計測 t=11） · 送信 t=12`);
+  expect(messageText(healthy,report)).toBe(`t=13 受信 · 温度センサー → 冷却調整装置：電子機器の温度の測定値の報告 ${formatValue(healthy,'thermal.rackTemperatureReport',report.value)}（計測 t=11） · 送信 t=12`);
  });
  it('commands keep their original send time while they are the latest value',()=>{
   const w=run(healthy,[{time:2,id:PAYLOAD,value:2}],20);
@@ -98,7 +98,7 @@ describe('fault A: cooling falls short while the pump reports normal',()=>{
   for(const gap of [0,4])expect(onsets(run(onlyA,[{time:8,id:PAYLOAD,value:2},{time:8+gap,id:O2,value:1}],200)).length,`gap ${gap}`).toBeGreaterThan(0);
   for(const gap of [10,30])expect(onsets(run(onlyA,[{time:8,id:PAYLOAD,value:2},{time:8+gap,id:O2,value:1}],200)),`gap ${gap}`).toEqual([]);
  },T);
- it('message history supports the hypothesis: the bad day gets more O₂ and a smaller pump grant than the good day',()=>{
+ it('message history supports the hypothesis: the bad day gets more 酸素 and a smaller pump grant than the good day',()=>{
   const bad=run(onlyA,designerRuns.reproduce,60),good=run(onlyA,designerRuns.control,60);
   expect(lastMessage(bad,'c_o2_rate')!.value).toBeCloseTo(2);expect(lastMessage(good,'c_o2_rate')!.value).toBeLessThan(1.5);
   expect(lastMessage(bad,'c_pump_grant')!.value).toBeLessThan(lastMessage(good,'c_pump_grant')!.value);
@@ -109,7 +109,7 @@ describe('fault A: cooling falls short while the pump reports normal',()=>{
  it('fails public cases before repair',()=>{expect(validateBehavior(faulty,createWorld(faulty)).passed).toBe(false);},T);
  it.each([
   ['direct: pump back to an essential load',{'pdu.pumpEssential':1}],
-  ['alternative: lower O₂ boost power',{'o2gen.boostPower':3}],
+  ['alternative: lower 酸素 boost power',{'o2gen.boostPower':3}],
   ['alternative: higher minimum flow reserves pump power first',{'cool_ctrl.minFlow':20}],
  ])('accepts %s',(_,patch)=>{const p:Record<string,number>={...FIX,...patch};if(!('pdu.pumpEssential' in patch))delete p['pdu.pumpEssential'];expect(check(faulty,p)).toMatchObject({passed:true});},T);
  it.each([
@@ -130,7 +130,7 @@ describe('fault A: cooling falls short while the pump reports normal',()=>{
     const role=report.from.match(/（(.+)）/)![1],room=sc.floor!.compartments.find(c=>c.role===role)!.id;
     for(const e of report.entries)for(const id of e.ids!){const node=sc.inputs.find(i=>i.id===id)?.nodeId??id;if(node===sc.floor!.alarm)continue;expect(sc.floor!.displays[node]??sc.floor!.devices.find(d=>d.nodeId===node)!.compartment,`${sc.id} ${report.id} ${id}`).toBe(room);}}
    const text=JSON.stringify(sc.reports)+sc.symptom+sc.briefing.firstAction;
-   for(const spoiler of ['一般負荷','pumpEssential','負荷区分','先着','排出量','最大流量'])expect(text,sc.id).not.toContain(spoiler);
+   for(const spoiler of ['ふつうの機器','pumpEssential','優先度','先着','排出量','最大流量'])expect(text,sc.id).not.toContain(spoiler);
   }
   const [c3,c5,c8,last]=shipScenarios,obs=(sc:Scenario,i:number)=>reportObservations(sc,sc.reports![i]);
   expect(obs(c3,0)[2].values).toMatchObject({rep_payload:3,rep_fire:1});expect(obs(c3,1)[1].values.mon_temp).toBeGreaterThan(40);expect(obs(c3,1)[1].values.rep_flow).toBe(12);
@@ -166,7 +166,7 @@ describe('ship play screen, experiments and saves',()=>{
   expect(html).toContain('宇宙船 / 1. カナリア3号の爆発');expect(SHIP_SCENARIO_ID).toBe('ship-canary-03');expect(html).toContain('本日の爆発：0 隻');expect(html).toContain('>Messages<');
   expect(html).not.toMatch(/>\+\d+</);expect(html).toContain('>Run<');
   // The game starts in the science lab: only its screens are shown.
-  expect(html).toContain('科学ラボの表示');expect(html).toContain('記録済みデータ量');expect(html).not.toContain('冷却ポンプ状態</h3>');
+  expect(html).toContain('実験室の表示');expect(html).toContain('記録済みデータ量');expect(html).not.toContain('冷却水ポンプの状態</h3>');
   // No mode switch and no designer sequences on the play screen.
   expect(html).not.toContain('Display mode');expect(html).not.toContain('pumpEssential');
   expect(renderToStaticMarkup(<HierarchyPlay s={caseScenarios[0]} onScenario={()=>{}}/>)).not.toContain('>Messages<');
@@ -178,15 +178,15 @@ describe('ship floor plan: what the player sees first',()=>{
  const panel=(id:string,w=createWorld(faulty))=>renderToStaticMarkup(<ShipDevicePanel s={faulty} w={w} id={id} purpose="experiment" setPurpose={()=>{}} onEdit={()=>{}}/>);
  it('shows compartments, equipment and the crew console, but no wiring and no internal values',()=>{
   const html=floorHtml();
-  for(const label of ['科学ラボ','生命維持室','電力管理室','熱管理室','機器ベイ','生命維持機械室','電源室','熱制御区画','配電盤','冷却ポンプ','O₂生成装置','科学ラボの表示'])expect(html).toContain(label);
+  for(const label of ['実験室','生命維持室','電力管理室','冷却管理室','電子機器室','生命維持機械室','電源室','冷却装置区画','配電盤','冷却水ポンプ','酸素製造装置','実験室の表示'])expect(html).toContain(label);
   // Consoles are operated where they sit, only by someone in that room.
-  expect(html).toMatch(/aria-label="ペイロード運転指令"[^>]*>.*>実験運転<\/button>/);expect(html).toContain('aria-pressed="true"');
-  expect(html).toMatch(/aria-label="O₂生成モード指令"[^>]*><button disabled=""/);expect(html).not.toMatch(/aria-label="ペイロード運転指令"[^>]*><button disabled/);
+  expect(html).toMatch(/aria-label="実験装置の運転指示"[^>]*>.*>実験運転<\/button>/);expect(html).toContain('aria-pressed="true"');
+  expect(html).toMatch(/aria-label="酸素製造モードの指示"[^>]*><button disabled=""/);expect(html).not.toMatch(/aria-label="実験装置の運転指示"[^>]*><button disabled/);
   expect(html.slice(0,html.indexOf('船内配置図'))).not.toContain('type="number"');
-  const thermal=floorHtml(createWorld(faulty),'thermal_room'),screen=(h:string)=>h.slice(0,h.indexOf('運用契約'));
-  expect(screen(thermal)).toContain('冷却ポンプ状態');expect(screen(thermal)).toContain('冷却液流量');expect(screen(thermal)).not.toContain('記録済みデータ量');
+  const thermal=floorHtml(createWorld(faulty),'thermal_room'),screen=(h:string)=>h.slice(0,h.indexOf('合格基準'));
+  expect(screen(thermal)).toContain('冷却水ポンプの状態');expect(screen(thermal)).toContain('冷却水の流量');expect(screen(thermal)).not.toContain('記録済みデータ量');
   expect(screen(floorHtml(createWorld(faulty),'bay'))).toContain('この部屋に表示はありません');
-  expect(html).not.toContain('<path');expect(html).not.toContain('給電許可');expect(html).not.toContain('pumpEssential');
+  expect(html).not.toContain('<path');expect(html).not.toContain('使ってよい電力');expect(html).not.toContain('pumpEssential');
   const main=renderToStaticMarkup(<App/>);expect(main).toContain('船内配置図');expect(main).not.toContain('hierarchy-graph');
   // Measurement points and diagnosis are gone.
   for(const word of ['計測点','計測チャンネル','診断'])expect(main+html+panel('pdu'),word).not.toContain(word);
@@ -211,14 +211,14 @@ describe('ship floor plan: what the player sees first',()=>{
   const at=(text:string)=>html.indexOf(text);
   expect(at('入力（この設備が受け取る値）')).toBeGreaterThan(0);expect(at('出力（この設備が送る値）')).toBeGreaterThan(at('入力（この設備が受け取る値）'));expect(at('プロパティ（この設備の設定と内部状態）')).toBeGreaterThan(at('出力（この設備が送る値）'));
   const inputs=html.slice(at('入力（'),at('出力（')),outputs=html.slice(at('出力（'),at('プロパティ（')),props=html.slice(at('プロパティ（'),at('受け渡しの履歴'));
-  for(const label of ['ポンプ電力要求','O₂生成装置電力要求'])expect(inputs).toContain(label);
-  for(const label of ['ポンプ給電許可','O₂生成装置給電許可','主バス負荷'])expect(outputs).toContain(label);
-  expect(outputs).toContain('1.5');expect(outputs).toContain('冷却ポンプ');
-  expect(props).toContain('冷却ポンプの負荷区分（1=重要負荷、0=一般負荷）');expect(props).toContain('割り当て容量（kW）');expect(props).toContain('計算周期（tick）');expect(props).toContain('変更できません');
-  expect(props).not.toContain('ポンプ給電許可');
+  for(const label of ['ポンプの電力申請','酸素製造装置の電力申請'])expect(inputs).toContain(label);
+  for(const label of ['ポンプが使ってよい電力','酸素製造装置が使ってよい電力','電気の使用量'])expect(outputs).toContain(label);
+  expect(outputs).toContain('1.5');expect(outputs).toContain('冷却水ポンプ');
+  expect(props).toContain('冷却水ポンプの優先度（1=最優先、0=ふつう）');expect(props).toContain('配れる電力の合計（kW）');expect(props).toContain('計算する間隔（tick）');expect(props).toContain('変更できません');
+  expect(props).not.toContain('ポンプが使ってよい電力');
  });
  it('internal state that is not sent anywhere is listed as a property, and command consoles show the crew command as their input',()=>{
-  const payload=panel('payload');expect(payload.slice(payload.indexOf('プロパティ（'))).toContain('熱保護で制限運転中');
+  const payload=panel('payload');expect(payload.slice(payload.indexOf('プロパティ（'))).toContain('過熱防止で出力制限中');
   const console=panel('ops_payload');expect(console.slice(console.indexOf('入力（'),console.indexOf('出力（'))).toContain('クルーの操作');expect(console).toContain('プロパティはありません');
   expect(panel('space_env')).toContain('船外環境（操作できない）');
  });
@@ -258,7 +258,7 @@ describe('same-class ships: three faults, three ways to explode',()=>{
   const ops:Operation[]=designerRuns.reproduce.map(i=>({atTick:i.time,kind:'setInput',target:i.id,value:i.value}));
   const pb=runToEnd(faulty,startPlayback(faulty,createWorld(faulty),ops,200));
   expect(pb.status).toBe('completed');expect(pb.terminatedAt).toBeLessThan(60);expect(pb.world.time).toBe(pb.terminatedAt);
-  expect(runExperiment(faulty,setupFor(faulty,createWorld(faulty)),ops,200)).toMatchObject({terminatedAt:pb.terminatedAt,terminalCause:'機器ベイの熱暴走'});
+  expect(runExperiment(faulty,setupFor(faulty,createWorld(faulty)),ops,200)).toMatchObject({terminatedAt:pb.terminatedAt,terminalCause:'電子機器室の過熱による発火'});
   let live=startLive(faulty,pb.world);live=liveTick(faulty,live);expect(live.world.time).toBe(pb.world.time);expect(live.notice?.stop).toBe(true);
  },T);
  it('crew voices follow what each room can see',()=>{

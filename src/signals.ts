@@ -15,7 +15,7 @@ export type MessageRecord=MessageStamp&{connectionId:string;signal:string;value:
 /** What a computation used from one input connection. */
 export type Adoption={seq:number;emittedAt:number;deliveredAt:number;measuredAt?:number;adoptedAt:number};
 export const MESSAGE_HISTORY=32;
-export const KIND_LABELS:Record<SignalKind,string>={measurement:'計測報告',command:'指令',status:'状態通知',response:'応答',physical:'物理量'};
+export const KIND_LABELS:Record<SignalKind,string>={measurement:'測定値の報告',command:'指示',status:'状態の報告',response:'応答',physical:'実際の値'};
 
 export const signalOf=(s:Scenario,id:string|undefined)=>id?s.signals?.find(d=>d.id===id):undefined;
 export const connectionSignal=(s:Scenario,e:Connection)=>signalOf(s,e.signal);
